@@ -26,6 +26,10 @@ const useMapStore = create((set) => ({
   nearbyPandals: [],
   setNearbyPandals: (pandals) => set({ nearbyPandals: pandals }),
 
+  // 5. Proximity Alert State
+  activeProximityPandal: null,
+  setActiveProximityPandal: (pandal) => set({ activeProximityPandal: pandal }),
+
   // Reset navigation when closing a pandal card
   clearNavigation: () =>
     set({
