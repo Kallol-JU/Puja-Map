@@ -22,6 +22,9 @@ const useMapStore = create((set) => ({
   activeRoute: null, // GeoJSON for the blue navigation line
   setActiveRoute: (route) => set({ activeRoute: route }),
 
+  routeStats: null,
+  setRouteStats: (stats) => set({ routeStats: stats }),
+
   // 4. Proximity State (Pandals currently loaded on map)
   nearbyPandals: [],
   setNearbyPandals: (pandals) => set({ nearbyPandals: pandals }),
@@ -35,6 +38,7 @@ const useMapStore = create((set) => ({
     set({
       selectedPandal: null,
       activeRoute: null,
+      routeStats: null,
       searchQuery: "",
       searchResults: [],
     }),
