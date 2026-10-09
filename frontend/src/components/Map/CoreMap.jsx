@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import Map, { NavigationControl, Source, Layer } from "react-map-gl/mapbox";
+import Map, {
+  NavigationControl,
+  Source,
+  Layer,
+  GeolocateControl,
+} from "react-map-gl/mapbox";
 import axios from "axios";
 import useMapStore from "../../store/useMapStore";
-import UserMarker from "./UserMarker";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
@@ -226,7 +230,13 @@ export default function CoreMap() {
       onMouseLeave={onMouseLeave}
     >
       <NavigationControl position="top-right" showCompass={false} />
-
+      <GeolocateControl
+        position="bottom-right"
+        trackUserLocation={true}
+        showUserHeading={true}
+        positionOptions={{ enableHighAccuracy: true, timeout: 5000 }}
+        style={{ marginRight: "10px", marginBottom: "100px" }} // Position above your bottom sheet
+      />
       {activeRoute && (
         <Source id="route-source" type="geojson" data={activeRoute}>
           <Layer {...routeLayerStyle} />
@@ -247,8 +257,6 @@ export default function CoreMap() {
         <Layer {...unclusteredPointLayer} />
         <Layer {...unclusteredLabelLayer} />
       </Source>
-
-      <UserMarker />
     </Map>
   );
 }
