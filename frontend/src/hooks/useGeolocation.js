@@ -1,40 +1,49 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import useMapStore from "../store/useMapStore";
 
-const useGeolocation = () => {
+export default function useGeolocation() {
   const setUserLocation = useMapStore((state) => state.setUserLocation);
-  const [error, setError] = useState(null);
+  const setGpsStatus = useMapStore((state) => state.setGpsStatus);
+  const setGpsError = useMapStore((state) => state.setGpsError);
 
   useEffect(() => {
     if (!("geolocation" in navigator)) {
-      setError("Geolocation is not supported by your browser");
+      setGpsStatus("error");
+      setGpsError("Geolocation is not supported by your browser");
       return;
     }
+
+    setGpsStatus("acquiring");
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         setUserLocation({
           lng: position.coords.longitude,
           lat: position.coords.latitude,
-          accuracy: position.coords.accuracy, // Useful for showing a larger/smaller blue dot radius
+          accuracy: position.coords.accuracy, // Captured in meters
         });
-        setError(null);
+        setGpsStatus("active");
+        setGpsError(null);
       },
       (err) => {
-        console.error("GPS Error:", err.message);
-        setError(err.message);
+        console.error("GPS Error:", err);
+        if (err.code === 1) {
+          setGpsStatus("denied");
+          setGpsError(
+            "Location access denied. Please enable it in browser settings.",
+          );
+        } else {
+          setGpsStatus("error");
+          setGpsError(err.message);
+        }
       },
       {
-        enableHighAccuracy: true,
+        enableHighAccuracy: true, // Forces device hardware GPS instead of IP location
         maximumAge: 10000,
-        timeout: 5000,
+        timeout: 10000,
       },
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [setUserLocation]);
-
-  return { error };
-};
-
-export default useGeolocation;
+  }, [setUserLocation, setGpsStatus, setGpsError]);
+}

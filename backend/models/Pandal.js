@@ -3,33 +3,45 @@ import mongoose from "mongoose";
 const pandalSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+
+    // Track colloquial names from different sources
     aliases: [{ type: String, trim: true }],
 
-    // Display location (the idol/center of the pandal)
     location: {
       type: { type: String, enum: ["Point"], required: true, default: "Point" },
-      coordinates: { type: [Number], required: true }, // MUST BE: [longitude, latitude]
+      coordinates: { type: [Number], required: true }, // [lng, lat]
     },
 
-    // The actual entrance/drop-off point for walking/driving navigation
     navigationPoint: {
-      type: { type: String, enum: ["Point"], required: true, default: "Point" },
-      coordinates: { type: [Number], required: true }, // MUST BE: [longitude, latitude]
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: { type: [Number] }, // [lng, lat]
     },
 
-    area: { type: String, required: true, trim: true },
-    district: { type: String, default: "Kolkata" },
+    area: { type: String, trim: true },
+    address: { type: String, trim: true },
+    district: { type: String, index: true },
 
-    // Verification System to build trust
+    // Data Provenance & Trust System
+    sources: [
+      {
+        type: String,
+        enum: ["SAHAJ", "PujoMap", "KolkataKhoj", "PujorShohor", "Manual"],
+      },
+    ],
+
+    confidenceLevel: {
+      type: String,
+      enum: ["HIGH", "MEDIUM", "LOW"],
+      default: "MEDIUM",
+    },
+
     isVerified: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
 
-// Create geospatial indexes for location-based queries
 pandalSchema.index({ location: "2dsphere" });
 pandalSchema.index({ navigationPoint: "2dsphere" });
-// Text index for fast searching by name
 pandalSchema.index({ name: "text", aliases: "text" });
 
 export default mongoose.model("Pandal", pandalSchema);

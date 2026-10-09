@@ -12,9 +12,14 @@ export default function PandalBottomSheet() {
   const routeStats = useMapStore((state) => state.routeStats);
   const setRouteStats = useMapStore((state) => state.setRouteStats);
 
+  // Bring in the navigation state
+  const isNavigating = useMapStore((state) => state.isNavigating);
+  const setIsNavigating = useMapStore((state) => state.setIsNavigating);
+
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
-  if (!selectedPandal) return null;
+  // If no pandal is selected OR if we are actively navigating, hide this sheet
+  if (!selectedPandal || isNavigating) return null;
 
   const handleNavigation = async () => {
     if (!userLocation) {
@@ -86,25 +91,31 @@ export default function PandalBottomSheet() {
         </div>
       )}
 
-      {/* Action Button */}
-      <button
-        onClick={handleNavigation}
-        disabled={isLoadingRoute || routeStats !== null}
-        className={`w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-2 font-bold text-white
-          ${routeStats ? "bg-emerald-600" : "bg-orange-600 hover:bg-orange-700 active:scale-[0.98]"}`}
-      >
-        {isLoadingRoute ? (
-          <>
-            <Loader2 size={18} className="animate-spin" /> Calculating...
-          </>
-        ) : routeStats ? (
-          <>Navigation Started</>
-        ) : (
-          <>
-            <Navigation size={18} /> Get Directions
-          </>
-        )}
-      </button>
+      {/* Action Button: Swaps based on whether routeStats exist */}
+      {!routeStats ? (
+        <button
+          onClick={handleNavigation}
+          disabled={isLoadingRoute}
+          className="w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-2 font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98]"
+        >
+          {isLoadingRoute ? (
+            <>
+              <Loader2 size={18} className="animate-spin" /> Calculating...
+            </>
+          ) : (
+            <>
+              <Navigation size={18} /> Get Directions
+            </>
+          )}
+        </button>
+      ) : (
+        <button
+          onClick={() => setIsNavigating(true)}
+          className="w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-2 font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98]"
+        >
+          <Navigation size={18} className="fill-white" /> Start Navigation
+        </button>
+      )}
     </div>
   );
 }

@@ -5,6 +5,12 @@ const useMapStore = create((set) => ({
   userLocation: null, // { lng, lat, accuracy }
   setUserLocation: (location) => set({ userLocation: location }),
 
+  gpsStatus: "idle", // 'idle' | 'acquiring' | 'active' | 'denied' | 'error'
+  setGpsStatus: (status) => set({ gpsStatus: status }),
+
+  gpsError: null,
+  setGpsError: (error) => set({ gpsError: error }),
+
   // 2. Search & UI State
   searchQuery: "",
   setSearchQuery: (query) => set({ searchQuery: query }),
@@ -25,6 +31,9 @@ const useMapStore = create((set) => ({
   routeStats: null,
   setRouteStats: (stats) => set({ routeStats: stats }),
 
+  isNavigating: false,
+  setIsNavigating: (status) => set({ isNavigating: status }),
+
   // 4. Proximity State (Pandals currently loaded on map)
   nearbyPandals: [],
   setNearbyPandals: (pandals) => set({ nearbyPandals: pandals }),
@@ -41,6 +50,7 @@ const useMapStore = create((set) => ({
       routeStats: null,
       searchQuery: "",
       searchResults: [],
+      isNavigating: false,
     }),
 }));
 
