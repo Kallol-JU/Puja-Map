@@ -2,18 +2,40 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#ffffff" />
+
+    <title>Durga Puja Map</title>
+    <meta
+      name="description"
+      content="Find and navigate to Durga Puja pandals near you."
+    />
+
+    <!-- Browser toolbar / status bar colour (match manifest theme_color) -->
+    <meta name="theme-color" content="#b91c1c" />
+
+    <!-- Android / Chrome -->
     <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- iOS Safari "Add to Home Screen" -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
     />
-    <title>Disha</title>
+    <meta name="apple-mobile-web-app-title" content="Puja Map" />
+
+    <!-- Icons (180x180 PNG for iOS) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v3.0.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>

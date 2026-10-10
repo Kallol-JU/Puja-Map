@@ -20,7 +20,9 @@ export default function useGeolocation() {
         setUserLocation({
           lng: position.coords.longitude,
           lat: position.coords.latitude,
-          accuracy: position.coords.accuracy, // Captured in meters
+          accuracy: position.coords.accuracy,
+          heading: position.coords.heading,
+          speed: position.coords.speed, //meters/second
         });
         setGpsStatus("active");
         setGpsError(null);

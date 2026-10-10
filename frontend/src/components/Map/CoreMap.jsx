@@ -7,6 +7,7 @@ import Map, {
 } from "react-map-gl/mapbox";
 import axios from "axios";
 import useMapStore from "../../store/useMapStore";
+import NavigationArrow from "./NavigationArrow";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
@@ -106,8 +107,22 @@ export default function CoreMap() {
     latitude: 22.5726,
     zoom: 12,
   });
+  const userLocation = useMapStore((state) => state.userLocation);
+  const isNavigating = useMapStore((state) => state.isNavigating);
 
-  // --- 2. Convert raw MongoDB data into Mapbox GeoJSON ---
+  // 3D Auto-Tracking Camera for Navigation
+  useEffect(() => {
+    if (isNavigating && userLocation && mapRef.current) {
+      mapRef.current.easeTo({
+        center: [userLocation.lng, userLocation.lat],
+        bearing: userLocation.heading || 0,
+        pitch: 60,
+        zoom: 17.5,
+        duration: 1000,
+      });
+    }
+  }, [isNavigating, userLocation]);
+
   const geoJsonData = useMemo(() => {
     return {
       type: "FeatureCollection",
@@ -257,6 +272,7 @@ export default function CoreMap() {
         <Layer {...unclusteredPointLayer} />
         <Layer {...unclusteredLabelLayer} />
       </Source>
+      <NavigationArrow />
     </Map>
   );
 }
