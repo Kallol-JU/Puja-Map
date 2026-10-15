@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { X, Navigation, MapPin, Loader2, Footprints } from "lucide-react";
+import {
+  Navigation,
+  X,
+  MapPin,
+  Loader2,
+  Footprints,
+  Clock,
+  Sparkles,
+} from "lucide-react";
 import useMapStore from "../../store/useMapStore";
 import { getDirections } from "../../services/mapbox";
 
@@ -20,7 +28,7 @@ export default function PandalBottomSheet() {
 
   if (!selectedPandal || isNavigating) return null;
 
-  // Helper to dynamically trigger the browser GPS prompt on demand
+  // On-demand GPS trigger fallback
   const obtainCurrentLocation = () => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
@@ -50,7 +58,6 @@ export default function PandalBottomSheet() {
 
     let activeUserPos = userLocation;
 
-    // 🚀 Fallback: If userLocation isn't ready, prompt the browser on-demand
     if (!activeUserPos) {
       try {
         activeUserPos = await obtainCurrentLocation();
@@ -58,7 +65,7 @@ export default function PandalBottomSheet() {
         setIsLoadingRoute(false);
         alert(
           "Location access is required for directions.\n\n" +
-            "1. Tap the lock/info icon in your browser URL bar and allow Location.\n" +
+            "1. Tap the lock icon in your browser URL bar and allow Location.\n" +
             "2. If opening from WhatsApp/Instagram, tap ⋮ at the top right and select 'Open in Chrome / Safari'.",
         );
         return;
@@ -106,75 +113,72 @@ export default function PandalBottomSheet() {
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pointer-events-none transition-all">
-      <div className="pointer-events-auto mx-auto max-w-md bg-white rounded-3xl p-4 sm:p-5 shadow-2xl border border-gray-100 flex flex-col gap-3 transition-all animate-in slide-in-from-bottom duration-300">
+    <div className="fixed inset-x-0 bottom-4 z-40 px-3 pb-[env(safe-area-inset-bottom)] pointer-events-none transition-all">
+      <div className="pointer-events-auto mx-auto max-w-[340px] sm:max-w-md bg-white/95 backdrop-blur-xl rounded-[24px] p-3 shadow-2xl border border-slate-200/80 flex flex-col gap-2.5 transition-all animate-in slide-in-from-bottom duration-300">
         {/* Pandal Info Header */}
-        <div className="flex justify-between items-start gap-3">
+        <div className="flex items-start justify-between gap-2 px-0.5">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-extrabold text-gray-900 truncate">
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 truncate tracking-tight">
                 {selectedPandal.name}
               </h3>
               {selectedPandal.confidenceLevel === "HIGH" && (
-                <span className="shrink-0 px-2 py-0.5 text-[10px] font-bold bg-pink-50 text-pink-600 rounded-full border border-pink-100">
-                  VIP
+                <span className="shrink-0 px-2 py-0.5 text-[9px] font-extrabold bg-pink-50 text-pink-600 rounded-full border border-pink-100 flex items-center gap-0.5">
+                  <Sparkles size={9} /> VIP
                 </span>
               )}
             </div>
-            <p className="text-xs font-semibold text-gray-500 mt-0.5 flex items-center gap-1 truncate">
-              <MapPin size={13} className="text-blue-500 shrink-0 inline" />
+            <p className="text-[11px] font-semibold text-slate-500 mt-0.5 flex items-center gap-1 truncate">
+              <MapPin size={12} className="text-blue-500 shrink-0 inline" />
               {selectedPandal.area || "Kolkata Durga Puja"}
             </p>
           </div>
 
           <button
             onClick={clearNavigation}
-            className="p-1.5 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors shrink-0"
+            className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors shrink-0"
             title="Close"
           >
-            <X size={18} />
+            <X size={15} />
           </button>
         </div>
 
-        {/* Route Stats Pill */}
+        {/* Compact Inline Trip Stats */}
         {routeStats && (
-          <div className="flex items-center justify-around bg-blue-50/80 border border-blue-100 p-2.5 rounded-2xl text-xs font-bold text-blue-900 shadow-sm">
-            <div className="flex items-center gap-1.5">
-              <Footprints size={15} className="text-blue-600" />
-              <span>{routeStats.distanceKm}</span>
-            </div>
-            <div className="w-px h-4 bg-blue-200" />
-            <div className="flex items-center gap-1.5">
-              <span>⏱️ ~{routeStats.durationMin} mins walk</span>
-            </div>
+          <div className="flex items-center justify-center gap-2 bg-slate-100/80 rounded-xl py-1.5 px-3 text-xs font-bold text-slate-800">
+            <span className="flex items-center gap-1 text-blue-600">
+              <Clock size={13} /> ~{routeStats.durationMin} mins walk
+            </span>
+            <span className="text-slate-300">•</span>
+            <span className="flex items-center gap-1 text-slate-600 font-semibold">
+              <Footprints size={13} /> {routeStats.distanceKm}
+            </span>
           </div>
         )}
 
-        {/* Action Button */}
+        {/* Action Button Pill */}
         {!routeStats ? (
           <button
             onClick={handleNavigation}
             disabled={isLoadingRoute}
-            className="w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-1 font-bold text-sm text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-75"
+            className="w-full py-2.5 rounded-full shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition-all font-bold text-xs sm:text-sm text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-75"
           >
             {isLoadingRoute ? (
               <>
-                <Loader2 size={18} className="animate-spin" /> Fetching GPS &
-                route...
+                <Loader2 size={15} className="animate-spin" /> Fetching route...
               </>
             ) : (
               <>
-                <Navigation size={18} /> Get Walking Directions
+                <Navigation size={15} className="fill-white" /> Directions
               </>
             )}
           </button>
         ) : (
           <button
             onClick={() => setIsNavigating(true)}
-            className="w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-1 font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98]"
+            className="w-full py-2.5 rounded-full shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all font-bold text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98]"
           >
-            <Navigation size={18} className="fill-white" /> Start Turn-by-Turn
-            Navigation
+            <Navigation size={15} className="fill-white" /> Start
           </button>
         )}
       </div>
