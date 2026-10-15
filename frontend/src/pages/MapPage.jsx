@@ -69,9 +69,7 @@ export default function MapPage() {
           pandals={pandals}
           isNavigating={isNavigating}
           activeRoute={activeRoute}
-          // 🚀 Prioritizes hook-fetched route geometry over store fallback
           routeGeometry={hookRouteGeometry ?? storeRouteGeometry}
-          // 🚀 Fades old route line to 35% opacity while calculating a new off-route path
           isRouteStale={isOffRoute || isRerouting}
           selectedPandal={selectedPandal}
           destinationPandal={destination}
@@ -104,16 +102,14 @@ export default function MapPage() {
       {/* PROXIMITY ALERT NOTIFICATION */}
       <ProximityAlert />
 
-      {/* FLOATING MAP CONTROLS */}
-      <div className="pointer-events-none absolute bottom-8 right-4 z-10 flex flex-col gap-4">
+      {/* FLOATING MAP CONTROLS (3-Button Compact Stack) */}
+      <div className="pointer-events-none absolute bottom-24 right-3 z-30 pb-[env(safe-area-inset-bottom)]">
         <div className="pointer-events-auto">
-          <MapControls
-            onOpenAddModal={() => setIsAddModalOpen(true)}
-            onRecenter={handleRecenter}
-          />
+          <MapControls mapRef={mapRef} onRecenter={handleRecenter} />
         </div>
       </div>
 
+      {/* PANDAL BOTTOM SHEET & MODALS */}
       <PandalBottomSheet />
 
       <AddPandalModal
