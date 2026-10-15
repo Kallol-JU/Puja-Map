@@ -8,7 +8,7 @@ export default function InstallPrompt() {
   const [isInAppBrowser, setIsInAppBrowser] = useState(false);
 
   useEffect(() => {
-    // 1. Check if app is already running as an installed PWA
+    // 1. Skip if already running as an installed standalone PWA
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       window.navigator.standalone;
@@ -17,7 +17,7 @@ export default function InstallPrompt() {
 
     const userAgent = window.navigator.userAgent.toLowerCase();
 
-    // 2. Detect In-App WebViews (WhatsApp, Instagram, Facebook, Messenger)
+    // 2. Detect In-App WebViews (WhatsApp, Instagram, Facebook)
     const inApp = /instagram|fban|fbav|whatsapp|line|micromessenger|wv/i.test(
       userAgent,
     );
@@ -27,35 +27,36 @@ export default function InstallPrompt() {
       return;
     }
 
-    // 3. Detect iOS Safari
-    const iosDevice = /iphone|ipad|ipod/.test(userAgent);
-    if (iosDevice) {
-      setIsIOS(true);
-      setShowPrompt(true);
-      return;
-    }
-
-    // 4. Check if event was captured early in main.jsx
+    // 3. Check if native install event was already captured
     if (window.deferredPwaPrompt) {
       setDeferredPrompt(window.deferredPwaPrompt);
       setShowPrompt(true);
     }
 
-    // 5. Global Event Listener for Android Chrome / Samsung Internet
+    // 4. Detect genuine iOS (without native prompt support)
+    const iosDevice = /iphone|ipad|ipod/.test(userAgent);
+    if (iosDevice && !window.deferredPwaPrompt) {
+      setIsIOS(true);
+      setShowPrompt(true);
+    }
+
+    // 5. Event Listener for Android / Chrome / Samsung Internet
     const handleBeforeInstall = (e) => {
       e.preventDefault();
       window.deferredPwaPrompt = e;
       setDeferredPrompt(e);
+      setIsIOS(false); // Enable native button if browser supports it
       setShowPrompt(true);
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);
 
-    // 6. Mobile Fallback: Force show banner after 1 second on mobile devices
+    // 6. Fallback: Show banner after 1s on mobile viewports
     const isMobile =
       /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(
         userAgent,
-      );
+      ) || window.innerWidth < 768;
+
     const timer = setTimeout(() => {
       if (isMobile) {
         setShowPrompt(true);
@@ -79,7 +80,6 @@ export default function InstallPrompt() {
       setDeferredPrompt(null);
       window.deferredPwaPrompt = null;
     } else {
-      // Fallback manual instructions if browser suppresses native dialog
       alert(
         "To install PujoMap:\n\n1. Tap the 3 dots (⋮) in your browser top right.\n2. Tap 'Add to Home screen' or 'Install app'.",
       );
@@ -92,15 +92,17 @@ export default function InstallPrompt() {
 
   if (!showPrompt) return null;
 
+  const hasNativePrompt = Boolean(deferredPrompt || window.deferredPwaPrompt);
+
   return (
     <div className="fixed bottom-4 left-3 right-3 z-50 mx-auto max-w-md animate-in fade-in slide-in-from-bottom-5 duration-300 pointer-events-none">
       <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/95 p-3.5 text-white shadow-2xl backdrop-blur-md">
-        {/* App Icon */}
+        {/* Icon */}
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-pink-600 to-amber-500 text-white shadow-md">
           <Download className="h-5 w-5" />
         </div>
 
-        {/* Text Instructions */}
+        {/* Text */}
         <div className="min-w-0 flex-1">
           <h4 className="text-xs font-bold text-white">Install PujoMap App</h4>
 
@@ -108,9 +110,9 @@ export default function InstallPrompt() {
             <p className="mt-0.5 text-[11px] text-amber-300 font-medium flex items-center gap-1">
               <ExternalLink className="h-3 w-3 inline shrink-0" />
               Tap <span className="font-bold">⋮</span> & select{" "}
-              <span className="font-bold">"Open in Chrome"</span> to install
+              <span className="font-bold">"Open in Chrome"</span>
             </p>
-          ) : isIOS ? (
+          ) : isIOS && !hasNativePrompt ? (
             <p className="mt-0.5 text-[11px] text-slate-300">
               Tap <Share className="h-3 w-3 text-blue-400 inline" /> then{" "}
               <span className="font-semibold text-white">
@@ -126,10 +128,10 @@ export default function InstallPrompt() {
 
         {/* Action Button */}
         <div className="flex items-center gap-1 shrink-0">
-          {!isInAppBrowser && !isIOS && (
+          {(!isIOS || hasNativePrompt) && !isInAppBrowser && (
             <button
               onClick={handleInstallClick}
-              className="rounded-xl bg-emerald-500 hover:bg-emerald-600 px-3 py-1.5 text-xs font-bold text-slate-950 transition-all active:scale-95 shadow-md"
+              className="rounded-xl bg-emerald-500 hover:bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-slate-950 transition-all active:scale-95 shadow-md"
             >
               Install
             </button>
