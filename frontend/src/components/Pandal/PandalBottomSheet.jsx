@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Navigation, MapPin, Loader2 } from "lucide-react";
+import { X, Navigation, MapPin, Loader2, Footprints } from "lucide-react";
 import useMapStore from "../../store/useMapStore";
 import { getDirections } from "../../services/mapbox";
 
@@ -12,27 +12,33 @@ export default function PandalBottomSheet() {
   const routeStats = useMapStore((state) => state.routeStats);
   const setRouteStats = useMapStore((state) => state.setRouteStats);
 
-  // Bring in the navigation state
+  // Navigation state
   const isNavigating = useMapStore((state) => state.isNavigating);
   const setIsNavigating = useMapStore((state) => state.setIsNavigating);
 
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
-  // If no pandal is selected OR if we are actively navigating, hide this sheet
+  // Hide sheet if no pandal selected or active turn-by-turn navigation is running
   if (!selectedPandal || isNavigating) return null;
 
   const handleNavigation = async () => {
     if (!userLocation) {
-      alert("Please enable GPS location to get directions.");
+      alert("Please enable GPS location permissions to get directions.");
       return;
     }
 
     setIsLoadingRoute(true);
 
-    // Use navigationPoint if available, otherwise fallback to standard location
+    // Fallback coordinates check
     const destCoords =
       selectedPandal.navigationPoint?.coordinates ||
-      selectedPandal.location.coordinates;
+      selectedPandal.location?.coordinates;
+
+    if (!Array.isArray(destCoords) || destCoords.length < 2) {
+      alert("Pandal coordinates are unavailable.");
+      setIsLoadingRoute(false);
+      return;
+    }
 
     const routeData = await getDirections(
       userLocation.lng,
@@ -42,80 +48,103 @@ export default function PandalBottomSheet() {
     );
 
     if (routeData) {
-      // 1. Save the geometry for the map line
+      // 1. Save geometry for the active map route line
       setActiveRoute({
         type: "Feature",
         geometry: routeData.geometry,
       });
 
-      // 2. Save distance (convert meters to km) and time (seconds to minutes)
+      // 2. Format distance & pedestrian walking time
+      const distMeters = routeData.distance || 0;
+      const formattedDistance =
+        distMeters < 1000
+          ? `${Math.round(distMeters)} m`
+          : `${(distMeters / 1000).toFixed(1)} km`;
+
       setRouteStats({
-        distanceKm: (routeData.distance / 1000).toFixed(1),
-        durationMin: Math.round(routeData.duration / 60),
+        distanceKm: formattedDistance,
+        durationMin: Math.max(1, Math.round((routeData.duration || 0) / 60)),
       });
     } else {
-      alert("Could not find a route to this pandal.");
+      alert("Could not calculate a route to this pandal.");
     }
 
     setIsLoadingRoute(false);
   };
 
   return (
-    <div className="absolute bottom-6 left-4 right-4 z-20 bg-white rounded-3xl p-5 shadow-2xl border border-gray-100 flex flex-col gap-3">
-      <div className="flex justify-between items-start">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-gray-900">
-              {selectedPandal.name}
-            </h3>
+    <div className="fixed inset-x-0 bottom-0 z-40 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pointer-events-none transition-all">
+      <div className="pointer-events-auto mx-auto max-w-md bg-white rounded-3xl p-4 sm:p-5 shadow-2xl border border-gray-100 flex flex-col gap-3 transition-all animate-in slide-in-from-bottom duration-300">
+        {/* Pandal Info Header */}
+        <div className="flex justify-between items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-extrabold text-gray-900 truncate">
+                {selectedPandal.name}
+              </h3>
+              {selectedPandal.confidenceLevel === "HIGH" && (
+                <span className="shrink-0 px-2 py-0.5 text-[10px] font-bold bg-pink-50 text-pink-600 rounded-full border border-pink-100">
+                  VIP
+                </span>
+              )}
+            </div>
+            <p className="text-xs font-semibold text-gray-500 mt-0.5 flex items-center gap-1 truncate">
+              <MapPin size={13} className="text-blue-500 shrink-0 inline" />
+              {selectedPandal.area || "Kolkata Durga Puja"}
+            </p>
           </div>
-          <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
-            <MapPin size={12} />
-            {selectedPandal.area || "Kolkata"}
-          </p>
+
+          <button
+            onClick={clearNavigation}
+            className="p-1.5 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors shrink-0"
+            title="Close"
+          >
+            <X size={18} />
+          </button>
         </div>
 
-        <button
-          onClick={clearNavigation}
-          className="p-1.5 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200"
-        >
-          <X size={18} />
-        </button>
+        {/* Pedestrian Route Stats Pill */}
+        {routeStats && (
+          <div className="flex items-center justify-around bg-blue-50/80 border border-blue-100 p-2.5 rounded-2xl text-xs font-bold text-blue-900 shadow-sm">
+            <div className="flex items-center gap-1.5">
+              <Footprints size={15} className="text-blue-600" />
+              <span>{routeStats.distanceKm}</span>
+            </div>
+            <div className="w-px h-4 bg-blue-200" />
+            <div className="flex items-center gap-1.5">
+              <span>⏱️ ~{routeStats.durationMin} mins walk</span>
+            </div>
+          </div>
+        )}
+
+        {/* Action Button: Calculates Route -> Switches to Live Navigation */}
+        {!routeStats ? (
+          <button
+            onClick={handleNavigation}
+            disabled={isLoadingRoute}
+            className="w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-1 font-bold text-sm text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-75"
+          >
+            {isLoadingRoute ? (
+              <>
+                <Loader2 size={18} className="animate-spin" /> Calculating
+                route...
+              </>
+            ) : (
+              <>
+                <Navigation size={18} /> Get Walking Directions
+              </>
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={() => setIsNavigating(true)}
+            className="w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-1 font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98]"
+          >
+            <Navigation size={18} className="fill-white" /> Start Turn-by-Turn
+            Navigation
+          </button>
+        )}
       </div>
-
-      {/* Show Stats if we have them */}
-      {routeStats && (
-        <div className="flex gap-4 bg-blue-50 p-3 rounded-2xl text-sm font-semibold text-blue-900">
-          <div>🚗 {routeStats.distanceKm} km</div>
-          <div>⏱️ ~{routeStats.durationMin} mins</div>
-        </div>
-      )}
-
-      {/* Action Button: Swaps based on whether routeStats exist */}
-      {!routeStats ? (
-        <button
-          onClick={handleNavigation}
-          disabled={isLoadingRoute}
-          className="w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-2 font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98]"
-        >
-          {isLoadingRoute ? (
-            <>
-              <Loader2 size={18} className="animate-spin" /> Calculating...
-            </>
-          ) : (
-            <>
-              <Navigation size={18} /> Get Directions
-            </>
-          )}
-        </button>
-      ) : (
-        <button
-          onClick={() => setIsNavigating(true)}
-          className="w-full py-3.5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all mt-2 font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98]"
-        >
-          <Navigation size={18} className="fill-white" /> Start Navigation
-        </button>
-      )}
     </div>
   );
 }
