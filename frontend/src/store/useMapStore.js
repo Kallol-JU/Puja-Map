@@ -1,17 +1,48 @@
 import { create } from "zustand";
 
 const useMapStore = create((set) => ({
+  // 0. Global Pandal Data
+  pandals: [],
+  setPandals: (pandals) => set({ pandals }),
+
+  fetchPandals: async () => {
+    try {
+      const response = await fetch("http://localhost:5000/api/pandals");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      set({ pandals: Array.isArray(data) ? data : [] });
+    } catch (error) {
+      console.error("Error fetching pandals into store:", error);
+    }
+  },
+
   // 1. User Location State
-  userLocation: null, // { lng, lat, accuracy }
+  userLocation: null,
   setUserLocation: (location) => set({ userLocation: location }),
 
-  gpsStatus: "idle", // 'idle' | 'acquiring' | 'active' | 'denied' | 'error'
+  gpsStatus: "idle",
   setGpsStatus: (status) => set({ gpsStatus: status }),
 
   gpsError: null,
   setGpsError: (error) => set({ gpsError: error }),
 
-  // 2. Search & UI State
+  // 2. Google Maps Direction & Route Search State
+  isRouteMode: false,
+  setIsRouteMode: (status) => set({ isRouteMode: status }),
+
+  originPandal: null, // null defaults to "Your Location"
+  setOriginPandal: (pandal) => set({ originPandal: pandal }),
+
+  destinationPandal: null,
+  setDestinationPandal: (pandal) => set({ destinationPandal: pandal }),
+
+  swapOriginAndDestination: () =>
+    set((state) => ({
+      originPandal: state.destinationPandal,
+      destinationPandal: state.originPandal,
+    })),
+
+  // 3. Search & UI State
   searchQuery: "",
   setSearchQuery: (query) => set({ searchQuery: query }),
 
@@ -21,11 +52,11 @@ const useMapStore = create((set) => ({
   isSearching: false,
   setIsSearching: (status) => set({ isSearching: status }),
 
-  // 3. Map & Navigation State
   selectedPandal: null,
   setSelectedPandal: (pandal) => set({ selectedPandal: pandal }),
 
-  activeRoute: null, // GeoJSON for the blue navigation line
+  // 4. Map & Navigation State
+  activeRoute: null,
   setActiveRoute: (route) => set({ activeRoute: route }),
 
   routeStats: null,
@@ -34,23 +65,29 @@ const useMapStore = create((set) => ({
   isNavigating: false,
   setIsNavigating: (status) => set({ isNavigating: status }),
 
-  // 4. Proximity State (Pandals currently loaded on map)
+  // 5. Proximity State (Restored for useProximity hook)
   nearbyPandals: [],
   setNearbyPandals: (pandals) => set({ nearbyPandals: pandals }),
 
-  // 5. Proximity Alert State
   activeProximityPandal: null,
   setActiveProximityPandal: (pandal) => set({ activeProximityPandal: pandal }),
 
-  // Reset navigation when closing a pandal card
+  routeGeometry: null,
+  setRouteGeometry: (geometry) => set({ routeGeometry: geometry }),
+
+  // 6. Reset navigation & route state
   clearNavigation: () =>
     set({
       selectedPandal: null,
+      originPandal: null,
+      destinationPandal: null,
+      isRouteMode: false,
       activeRoute: null,
       routeStats: null,
       searchQuery: "",
       searchResults: [],
       isNavigating: false,
+      activeProximityPandal: null,
     }),
 }));
 

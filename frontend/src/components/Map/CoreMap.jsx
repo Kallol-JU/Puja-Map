@@ -1,278 +1,285 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import Map, {
-  NavigationControl,
-  Source,
-  Layer,
-  GeolocateControl,
-} from "react-map-gl/mapbox";
-import axios from "axios";
-import useMapStore from "../../store/useMapStore";
-import NavigationArrow from "./NavigationArrow";
+import { useMemo, useCallback, useEffect, useRef } from "react";
+import Map, { Source, Layer, Marker } from "react-map-gl/mapbox";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const MAP_STYLE = "mapbox://styles/mapbox/light-v11";
 
-// --- 1. Mapbox Layer Styles (Google Maps Vibe) ---
+const INITIAL_VIEW_STATE = {
+  longitude: 88.3639,
+  latitude: 22.5726,
+  zoom: 11,
+};
 
-// The blue navigation route
-const routeLayerStyle = {
+const POINT_LAYER_ID = "pandal-dots";
+
+const ZERO_PADDING = { top: 0, bottom: 0, left: 0, right: 0 };
+// 🚶 Balanced top/bottom padding for walking view
+const NAV_PADDING = { top: 140, bottom: 120, left: 0, right: 0 };
+
+const pandalDotLayer = {
+  id: POINT_LAYER_ID,
+  type: "circle",
+  paint: {
+    "circle-radius": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      8,
+      1.5,
+      11,
+      3,
+      14,
+      6,
+      17,
+      10,
+    ],
+    "circle-color": [
+      "match",
+      ["get", "confidenceLevel"],
+      "HIGH",
+      "#D81B60",
+      "MEDIUM",
+      "#B48A44",
+      "#00897B",
+    ],
+    "circle-stroke-color": "#ffffff",
+    "circle-stroke-width": 1,
+  },
+};
+
+const routeLineLayer = {
   id: "route-line",
   type: "line",
-  layout: { "line-join": "round", "line-cap": "round" },
-  paint: { "line-color": "#3b82f6", "line-width": 6, "line-opacity": 0.8 },
-};
-
-// Clustered circles (zoomed out)
-const clusterLayer = {
-  id: "clusters",
-  type: "circle",
-  source: "pandals",
-  filter: ["has", "point_count"],
-  paint: {
-    "circle-color": [
-      "step",
-      ["get", "point_count"],
-      "#f28b82",
-      10,
-      "#ea4335",
-      50,
-      "#c5221f",
-    ],
-    "circle-radius": ["step", ["get", "point_count"], 15, 10, 18, 50, 22],
-    "circle-stroke-width": 2,
-    "circle-stroke-color": "#fff",
-  },
-};
-
-// The number inside the cluster
-const clusterCountLayer = {
-  id: "cluster-count",
-  type: "symbol",
-  source: "pandals",
-  filter: ["has", "point_count"],
   layout: {
-    "text-field": "{point_count_abbreviated}",
-    "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
-    "text-size": 12,
-  },
-  paint: { "text-color": "#ffffff" },
-};
-
-// Clean minimal dots for individual pandals
-const unclusteredPointLayer = {
-  id: "unclustered-point",
-  type: "circle",
-  source: "pandals",
-  filter: ["!", ["has", "point_count"]],
-  paint: {
-    "circle-color": "#ea4335", // Google Maps Red
-    "circle-radius": 6,
-    "circle-stroke-width": 2,
-    "circle-stroke-color": "#fff",
-  },
-};
-
-// Smart text labels (Collision detection prevents overlapping!)
-const unclusteredLabelLayer = {
-  id: "unclustered-label",
-  type: "symbol",
-  source: "pandals",
-  filter: ["!", ["has", "point_count"]],
-  layout: {
-    "text-field": ["get", "name"],
-    "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-    "text-size": 11,
-    "text-offset": [0, 1.2],
-    "text-anchor": "top",
-    "text-allow-overlap": false, // This is the magic that stops the clutter
+    "line-join": "round",
+    "line-cap": "round",
   },
   paint: {
-    "text-color": "#3c4043",
-    "text-halo-color": "#ffffff",
-    "text-halo-width": 2,
+    "line-color": "#2563eb",
+    "line-width": 6,
   },
 };
 
-export default function CoreMap() {
-  const mapRef = useRef(null);
+function toLineCoordinates(route) {
+  if (!route) return null;
+  const geom = route.geometry ?? route;
+  return Array.isArray(geom?.coordinates) && geom.coordinates.length
+    ? geom.coordinates
+    : null;
+}
 
-  const nearbyPandals = useMapStore((state) => state.nearbyPandals);
-  const setNearbyPandals = useMapStore((state) => state.setNearbyPandals);
-  const selectedPandal = useMapStore((state) => state.selectedPandal);
-  const setSelectedPandal = useMapStore((state) => state.setSelectedPandal);
-  const activeRoute = useMapStore((state) => state.activeRoute);
+function toFeature(route) {
+  if (!route) return null;
+  if (route.type === "Feature" || route.type === "FeatureCollection")
+    return route;
+  const geom = route.geometry ?? route;
+  if (!geom?.type) return null;
+  return { type: "Feature", properties: {}, geometry: geom };
+}
 
-  const [viewState, setViewState] = useState({
-    longitude: 88.3639,
-    latitude: 22.5726,
-    zoom: 12,
-  });
-  const userLocation = useMapStore((state) => state.userLocation);
-  const isNavigating = useMapStore((state) => state.isNavigating);
+export default function CoreMap({
+  mapRef,
+  pandals = [],
+  onPandalSelect,
+  isNavigating = false,
+  activeRoute = null,
+  routeGeometry = null,
+  selectedPandal = null,
+  destinationPandal = null,
+  userLocation = null,
+  snappedPosition = null,
+}) {
+  const lastHeadingRef = useRef(0);
+  const wasNavigatingRef = useRef(false);
+  const userLocationRef = useRef(userLocation);
+  const navStateRef = useRef({ isNavigating, activeRoute });
 
-  // 3D Auto-Tracking Camera for Navigation
-  useEffect(() => {
-    if (isNavigating && userLocation && mapRef.current) {
-      mapRef.current.easeTo({
-        center: [userLocation.lng, userLocation.lat],
-        bearing: userLocation.heading || 0,
-        pitch: 60,
-        zoom: 17.5,
-        duration: 1000,
-      });
-    }
-  }, [isNavigating, userLocation]);
+  userLocationRef.current = userLocation;
+  navStateRef.current = { isNavigating, activeRoute };
 
-  const geoJsonData = useMemo(() => {
-    return {
+  const displayedRoute = useMemo(
+    () =>
+      toFeature(isNavigating && routeGeometry ? routeGeometry : activeRoute),
+    [isNavigating, routeGeometry, activeRoute],
+  );
+
+  const geoJsonData = useMemo(
+    () => ({
       type: "FeatureCollection",
-      features: nearbyPandals.map((pandal) => ({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: pandal.location.coordinates,
-        },
-        properties: {
-          id: pandal._id,
-          name: pandal.name,
-        },
-      })),
-    };
-  }, [nearbyPandals]);
-
-  // --- 3. Handle Interactions (Clicks & Data Fetching) ---
-
-  useEffect(() => {
-    const fetchPandals = async () => {
-      try {
-        const res = await axios.get(`${API_URL}/pandals/nearby`, {
-          params: {
-            lng: viewState.longitude,
-            lat: viewState.latitude,
-            radius: 8000,
+      features: pandals
+        .filter((p) => Array.isArray(p?.location?.coordinates))
+        .map((p) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: p.location.coordinates },
+          properties: {
+            id: String(p._id),
+            name: p.name,
+            confidenceLevel: p.confidenceLevel,
           },
-        });
-        setNearbyPandals(res.data);
-      } catch (error) {
-        console.error("Failed to fetch nearby pandals:", error);
-      }
-    };
-    const timer = setTimeout(fetchPandals, 400);
-    return () => clearTimeout(timer);
-  }, [viewState.longitude, viewState.latitude, setNearbyPandals]);
+        })),
+    }),
+    [pandals],
+  );
+
+  const activePos =
+    snappedPosition?.coordinates ||
+    (userLocation ? [userLocation.lng, userLocation.lat] : null);
+  const activeBearing =
+    snappedPosition?.bearing ?? userLocation?.heading ?? lastHeadingRef.current;
 
   useEffect(() => {
-    if (selectedPandal && mapRef.current && !activeRoute) {
+    if (!selectedPandal || !mapRef?.current) return;
+    const { isNavigating: nav, activeRoute: route } = navStateRef.current;
+    if (nav || route) return;
+
+    const coords = selectedPandal.location?.coordinates;
+    if (Array.isArray(coords) && coords.length === 2) {
       mapRef.current.flyTo({
-        center: [
-          selectedPandal.location.coordinates[0],
-          selectedPandal.location.coordinates[1],
-        ],
+        center: [coords[0], coords[1]],
         zoom: 15.5,
-        duration: 1500,
+        pitch: 25,
+        duration: 1200,
       });
     }
-  }, [selectedPandal, activeRoute]);
+  }, [selectedPandal, mapRef]);
+
+  // 🚶 Walking 3D Camera Tracking
+  useEffect(() => {
+    if (!isNavigating || !activePos || !mapRef?.current) return;
+
+    if (Number.isFinite(activeBearing)) lastHeadingRef.current = activeBearing;
+
+    mapRef.current.easeTo({
+      center: activePos,
+      zoom: 18.2, // 🔍 Street/lane level zoom for pedestrians
+      pitch: 40, // 📐 Comfortable walking tilt
+      bearing: lastHeadingRef.current,
+      padding: NAV_PADDING,
+      duration: 1000,
+      easing: (t) => t,
+      essential: true,
+    });
+  }, [isNavigating, activePos, activeBearing, mapRef]);
 
   useEffect(() => {
-    if (activeRoute && mapRef.current) {
-      const coordinates = activeRoute.geometry.coordinates;
-      const bounds = coordinates.reduce(
-        (bounds, coord) => [
-          [Math.min(bounds[0][0], coord[0]), Math.min(bounds[0][1], coord[1])],
-          [Math.max(bounds[1][0], coord[0]), Math.max(bounds[1][1], coord[1])],
-        ],
-        [
-          [coordinates[0][0], coordinates[0][1]],
-          [coordinates[0][0], coordinates[0][1]],
-        ],
-      );
-      mapRef.current.fitBounds(bounds, { padding: 60, duration: 1000 });
-    }
-  }, [activeRoute]);
-
-  // Handle clicking on Native Mapbox Layers
-  const onMapClick = (event) => {
-    const feature = event.features[0];
-    if (!feature) return;
-
-    // If they clicked a pandal dot or text
-    if (
-      feature.layer.id === "unclustered-point" ||
-      feature.layer.id === "unclustered-label"
-    ) {
-      const pandalId = feature.properties.id;
-      const clicked = nearbyPandals.find((p) => p._id === pandalId);
-      if (clicked) setSelectedPandal(clicked);
-    }
-
-    // If they clicked a cluster, zoom in to expand it
-    if (feature.layer.id === "clusters") {
-      const clusterId = feature.properties.cluster_id;
-      const mapboxSource = mapRef.current.getSource("pandals");
-
-      mapboxSource.getClusterExpansionZoom(clusterId, (err, zoom) => {
-        if (err) return;
-        mapRef.current.easeTo({
-          center: feature.geometry.coordinates,
-          zoom: zoom + 1,
-          duration: 500,
-        });
+    if (wasNavigatingRef.current && !isNavigating && mapRef?.current) {
+      lastHeadingRef.current = 0;
+      mapRef.current.easeTo({
+        pitch: 0,
+        bearing: 0,
+        padding: ZERO_PADDING,
+        duration: 800,
       });
     }
-  };
+    wasNavigatingRef.current = isNavigating;
+  }, [isNavigating, mapRef]);
 
-  // Change cursor to pointer when hovering over clickable things
-  const onMouseEnter = () =>
-    (mapRef.current.getCanvas().style.cursor = "pointer");
-  const onMouseLeave = () => (mapRef.current.getCanvas().style.cursor = "");
+  const destCoords = destinationPandal?.location?.coordinates;
+  useEffect(() => {
+    if (isNavigating || !activeRoute || !mapRef?.current) return;
+
+    try {
+      const points = [...(toLineCoordinates(activeRoute) ?? [])];
+      const user = userLocationRef.current;
+      if (user?.lng != null && user?.lat != null)
+        points.push([user.lng, user.lat]);
+      if (Array.isArray(destCoords) && destCoords.length === 2)
+        points.push(destCoords);
+      if (!points.length) return;
+
+      let minLng = points[0][0],
+        maxLng = points[0][0],
+        minLat = points[0][1],
+        maxLat = points[0][1];
+      for (const [lng, lat] of points) {
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+
+      mapRef.current.fitBounds(
+        [
+          [minLng, minLat],
+          [maxLng, maxLat],
+        ],
+        {
+          padding: { top: 120, bottom: 240, left: 50, right: 50 },
+          pitch: 0,
+          bearing: 0,
+          maxZoom: 17,
+          duration: 1500,
+        },
+      );
+    } catch (err) {
+      console.error("Error fitting map bounds to active route:", err);
+    }
+  }, [activeRoute, isNavigating, destCoords, mapRef]);
+
+  const handleClick = useCallback(
+    (event) => {
+      const feature = event.features?.[0];
+      if (!feature || !onPandalSelect) return;
+      const clicked = pandals.find(
+        (p) => String(p._id) === feature.properties.id,
+      );
+      if (clicked) onPandalSelect(clicked);
+    },
+    [pandals, onPandalSelect],
+  );
+
+  const handleMouseEnter = useCallback(() => {
+    const canvas = mapRef?.current?.getCanvas();
+    if (canvas) canvas.style.cursor = "pointer";
+  }, [mapRef]);
+
+  const handleMouseLeave = useCallback(() => {
+    const canvas = mapRef?.current?.getCanvas();
+    if (canvas) canvas.style.cursor = "";
+  }, [mapRef]);
 
   return (
     <Map
       ref={mapRef}
-      {...viewState}
-      onMove={(evt) => setViewState(evt.viewState)}
-      mapStyle="mapbox://styles/mapbox/streets-v12"
+      initialViewState={INITIAL_VIEW_STATE}
+      mapStyle={MAP_STYLE}
       mapboxAccessToken={MAPBOX_TOKEN}
       style={{ width: "100%", height: "100%" }}
-      interactiveLayerIds={[
-        "clusters",
-        "unclustered-point",
-        "unclustered-label",
-      ]}
-      onClick={onMapClick}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      interactiveLayerIds={[POINT_LAYER_ID]}
+      onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
-      <NavigationControl position="top-right" showCompass={false} />
-      <GeolocateControl
-        position="bottom-right"
-        trackUserLocation={true}
-        showUserHeading={true}
-        positionOptions={{ enableHighAccuracy: true, timeout: 5000 }}
-        style={{ marginRight: "10px", marginBottom: "100px" }} // Position above your bottom sheet
-      />
-      {activeRoute && (
-        <Source id="route-source" type="geojson" data={activeRoute}>
-          <Layer {...routeLayerStyle} />
+      {/* 1. ROUTE LINE */}
+      {displayedRoute && (
+        <Source id="active-route" type="geojson" data={displayedRoute}>
+          <Layer {...routeLineLayer} />
         </Source>
       )}
 
-      {/* The new WebGL Data Layer replaces PandalMarker.jsx */}
-      <Source
-        id="pandals"
-        type="geojson"
-        data={geoJsonData}
-        cluster={true}
-        clusterMaxZoom={14}
-        clusterRadius={50}
-      >
-        <Layer {...clusterLayer} />
-        <Layer {...clusterCountLayer} />
-        <Layer {...unclusteredPointLayer} />
-        <Layer {...unclusteredLabelLayer} />
+      {/* 2. PANDAL DOTS */}
+      <Source id="pandals" type="geojson" data={geoJsonData}>
+        <Layer {...pandalDotLayer} />
       </Source>
-      <NavigationArrow />
+
+      {/* 3. LIVE SNAPPED USER LOCATION WITH DIRECTIONAL CONE */}
+      {activePos && (
+        <Marker
+          longitude={activePos[0]}
+          latitude={activePos[1]}
+          anchor="center"
+        >
+          <div
+            className="relative flex h-8 w-8 items-center justify-center transition-transform duration-300"
+            style={{ transform: `rotate(${activeBearing}deg)` }}
+          >
+            {/* Direction Beam Cone */}
+            <div className="absolute -top-3 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-blue-500/40" />
+            {/* Core Marker Puck */}
+            <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-blue-600 shadow-lg" />
+          </div>
+        </Marker>
+      )}
     </Map>
   );
 }

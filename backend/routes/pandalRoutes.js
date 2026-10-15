@@ -3,6 +3,17 @@ import Pandal from "../models/Pandal.js";
 import axios from "axios";
 const router = express.Router();
 
+// @route   GET /api/pandals
+// @desc    Get all pandals for map rendering
+router.get("/", async (req, res) => {
+  try {
+    const pandals = await Pandal.find({});
+    res.json(pandals);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // @route   GET /api/pandals/nearby
 // @desc    Get pandals within the current map viewport (Spatial Query)
 router.get("/nearby", async (req, res) => {
@@ -50,7 +61,6 @@ router.get("/search", async (req, res) => {
       ],
     };
 
-    // If user GPS is provided, sort search results by proximity
     if (lng && lat) {
       const pandals = await Pandal.aggregate([
         {
@@ -70,7 +80,6 @@ router.get("/search", async (req, res) => {
       return res.json(pandals);
     }
 
-    // Fallback if user denied GPS permission
     const pandals = await Pandal.find(query).limit(10);
     res.json(pandals);
   } catch (error) {
@@ -143,17 +152,15 @@ router.post("/add", async (req, res) => {
     let isGoogleVerified = false;
     if (apiKey) {
       try {
-        // Search Google Places near the user's GPS coordinates
         const googleUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${parsedLat},${parsedLng}&radius=150&keyword=${encodeURIComponent(name)}&key=${apiKey}`;
         const googleRes = await axios.get(googleUrl);
 
         if (googleRes.data.results && googleRes.data.results.length > 0) {
           const match = googleRes.data.results[0];
-          verifiedName = match.name; // Uses official Google title
+          verifiedName = match.name;
           address = match.vicinity || "";
           isGoogleVerified = true;
         } else {
-          // Fallback: Reverse geocode the coordinates for area/address
           const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${parsedLat},${parsedLng}&key=${apiKey}`;
           const geoRes = await axios.get(geocodeUrl);
           if (geoRes.data.results && geoRes.data.results.length > 0) {
@@ -171,7 +178,6 @@ router.post("/add", async (req, res) => {
       }
     }
 
-    // 2. Save the Pandal in MongoDB
     const newPandal = new Pandal({
       name: verifiedName,
       aliases: [name.trim()],

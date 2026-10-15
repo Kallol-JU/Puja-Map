@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"; // Added useEffect here
+import { useState, useRef, useEffect } from "react";
 import CoreMap from "../components/Map/CoreMap";
 import SearchBar from "../components/Search/SearchBar";
 import PandalBottomSheet from "../components/Pandal/PandalBottomSheet";
@@ -6,6 +6,7 @@ import ProximityAlert from "../components/Pandal/ProximityAlert";
 import ActiveNavPanel from "../components/Navigation/ActiveNavPanel";
 import MapControls from "../components/Map/MapControls";
 import AddPandalModal from "../components/Pandal/AddPandalModal";
+import InstallPrompt from "../components/UI/InstallPrompt";
 
 import useGeolocation from "../hooks/useGeolocation";
 import useProximity from "../hooks/useProximity";
@@ -13,18 +14,30 @@ import { useNavigation } from "../hooks/useNavigation";
 import useMapStore from "../store/useMapStore";
 
 export default function MapPage() {
-  // ALL hooks must go inside this bracket!
   useGeolocation();
   useProximity();
 
-  // Grab the data from Claude's upgraded hook
-  const { updatePosition, upcomingStep, distanceToManeuver } = useNavigation();
-
-  // Your standard state hooks
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  const pandals = useMapStore((state) => state.pandals);
+  const fetchPandals = useMapStore((state) => state.fetchPandals);
+  const setSelectedPandal = useMapStore((state) => state.setSelectedPandal);
+  const selectedPandal = useMapStore((state) => state.selectedPandal);
+  const destinationPandal = useMapStore((state) => state.destinationPandal);
+  const activeRoute = useMapStore((state) => state.activeRoute);
+  const routeGeometry = useMapStore((state) => state.routeGeometry);
   const isNavigating = useMapStore((state) => state.isNavigating);
   const userLocation = useMapStore((state) => state.userLocation);
+
+  const { step, distanceToManeuver, isRerouting, snappedPosition } =
+    useNavigation();
+
+  const destination = destinationPandal ?? selectedPandal;
   const mapRef = useRef(null);
+
+  useEffect(() => {
+    fetchPandals();
+  }, [fetchPandals]);
 
   const handleRecenter = () => {
     if (userLocation && mapRef.current) {
@@ -38,37 +51,64 @@ export default function MapPage() {
     }
   };
 
-  // Feed live GPS coordinates to the turn-by-turn math
-  useEffect(() => {
-    if (isNavigating && userLocation && updatePosition) {
-      updatePosition([userLocation.lng, userLocation.lat]);
-    }
-  }, [userLocation, isNavigating, updatePosition]);
-
   return (
     <div className="h-screen w-full relative bg-gray-50 overflow-hidden select-none">
-      {/* Passed Claude's step data directly to the UI panel */}
+      {/* MAP BACKGROUND */}
+      <div className="absolute inset-0 z-0">
+        <CoreMap
+          mapRef={mapRef}
+          pandals={pandals}
+          isNavigating={isNavigating}
+          activeRoute={activeRoute}
+          routeGeometry={routeGeometry}
+          selectedPandal={selectedPandal}
+          destinationPandal={destination}
+          userLocation={userLocation}
+          snappedPosition={snappedPosition}
+          onPandalSelect={(pandal) => setSelectedPandal(pandal)}
+        />
+      </div>
+
+      {/* TOP BAR */}
       {isNavigating ? (
-        <ActiveNavPanel step={upcomingStep} distance={distanceToManeuver} />
+        <div className="pointer-events-none absolute top-3 left-0 right-0 z-20 flex justify-center px-4 pt-[env(safe-area-inset-top)]">
+          <div className="pointer-events-auto w-full max-w-md">
+            <ActiveNavPanel
+              step={step}
+              distance={distanceToManeuver}
+              destinationPandal={destination}
+              isRerouting={isRerouting}
+            />
+          </div>
+        </div>
       ) : (
-        <SearchBar />
+        <div className="pointer-events-none absolute left-0 top-4 z-10 w-full px-4">
+          <div className="pointer-events-auto mx-auto max-w-md rounded-full bg-white shadow-lg">
+            <SearchBar />
+          </div>
+        </div>
       )}
 
       <ProximityAlert />
 
-      <CoreMap mapRef={mapRef} />
+      {/* FLOATING CONTROLS */}
+      <div className="pointer-events-none absolute bottom-8 right-4 z-10 flex flex-col gap-4">
+        <div className="pointer-events-auto">
+          <MapControls
+            onOpenAddModal={() => setIsAddModalOpen(true)}
+            onRecenter={handleRecenter}
+          />
+        </div>
+      </div>
 
-      <MapControls
-        onOpenAddModal={() => setIsAddModalOpen(true)}
-        onRecenter={handleRecenter}
-      />
-
+      {/* PANDAL BOTTOM SHEET */}
       <PandalBottomSheet />
 
       <AddPandalModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
       />
+      <InstallPrompt />
     </div>
   );
 }

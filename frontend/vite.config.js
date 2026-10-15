@@ -11,20 +11,18 @@ export default defineConfig({
     basicSsl(),
     VitePWA({
       registerType: "autoUpdate",
-
       includeAssets: ["favicon.svg", "apple-touch-icon.png"],
-
       manifest: {
         id: "/",
-        name: "Durga Puja Map",
-        short_name: "Puja Map",
+        name: "PujoMap - Durga Puja Navigation",
+        short_name: "PujoMap",
         description: "Find and navigate to Durga Puja pandals near you.",
         start_url: "/",
         scope: "/",
         display: "standalone",
         orientation: "portrait",
-        theme_color: "#b91c1c",
-        background_color: "#ffffff",
+        theme_color: "#0f172a",
+        background_color: "#0f172a",
         icons: [
           { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
@@ -36,23 +34,13 @@ export default defineConfig({
           },
         ],
       },
-
       workbox: {
-        // Precache the app shell: JS, CSS, HTML, images, fonts
         globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
-
-        // mapbox-gl makes the main bundle large; the default limit is 2 MiB
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-
-        // Serve index.html for any in-app route when offline (SPA)
         navigateFallback: "index.html",
-
-        // Remove caches from older builds
         cleanupOutdatedCaches: true,
-
         runtimeCaching: [
           {
-            // Images you load at runtime (e.g. pandal photos in /public or a CDN you control)
             urlPattern: ({ request }) => request.destination === "image",
             handler: "CacheFirst",
             options: {
@@ -62,7 +50,6 @@ export default defineConfig({
             },
           },
           {
-            // Google Fonts stylesheets (skip this block if you self-host fonts)
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: "StaleWhileRevalidate",
             options: { cacheName: "google-fonts-styles" },
@@ -78,9 +65,24 @@ export default defineConfig({
           },
         ],
       },
-
-      // Lets you test the service worker with `npm run dev`
       devOptions: { enabled: true },
     }),
   ],
+  // ⚡ PERFORMANCE OPTIMIZATIONS FOR ULTRA-FAST MOBILE LOADING
+  build: {
+    target: "esnext",
+    minify: "esbuild",
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          mapbox: ["mapbox-gl", "react-map-gl"],
+          icons: ["lucide-react"],
+          vendor: ["react", "react-dom", "zustand"],
+        },
+      },
+    },
+  },
+  server: {
+    host: true, // Allows testing on real physical mobile phones via local Wi-Fi IP
+  },
 });

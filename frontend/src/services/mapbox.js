@@ -5,7 +5,7 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 export const getDirections = async (startLng, startLat, endLng, endLat) => {
   try {
     // Using driving profile to safely route across bridges/highways
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${startLng},${startLat};${endLng},${endLat}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&access_token=${MAPBOX_TOKEN}`;
 
     const response = await axios.get(url);
 
