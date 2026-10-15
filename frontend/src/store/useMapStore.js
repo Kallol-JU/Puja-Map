@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { get, set } from "idb-keyval";
 
 const API_URL = (
   import.meta.env.VITE_API_URL || "https://puja-map.onrender.com/api"
@@ -6,7 +7,12 @@ const API_URL = (
 
 const CACHE_KEY = "pujomap_pandals_cache";
 
-// 🚀 Strips non-essential properties so payload fits easily in localStorage (<500KB)
+try {
+  localStorage.removeItem(CACHE_KEY);
+} catch (e) {
+  // Ignore
+}
+
 const minimizeForCache = (pandals) => {
   if (!Array.isArray(pandals)) return [];
   return pandals.map((p) => ({
@@ -19,107 +25,109 @@ const minimizeForCache = (pandals) => {
   }));
 };
 
-const getCachedPandals = () => {
-  try {
-    const cached = localStorage.getItem(CACHE_KEY);
-    return cached ? JSON.parse(cached) : [];
-  } catch (err) {
-    return [];
-  }
-};
-
-const useMapStore = create((set) => ({
-  pandals: getCachedPandals(),
-  setPandals: (pandals) => set({ pandals }),
-
-  fetchPandals: async () => {
-    try {
-      const response = await fetch(`${API_URL}/pandals`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-
-      if (Array.isArray(data) && data.length > 0) {
-        set({ pandals: data });
-        // Strip heavy fields before writing to localStorage
-        try {
-          const lightweightData = minimizeForCache(data);
-          localStorage.setItem(CACHE_KEY, JSON.stringify(lightweightData));
-        } catch (e) {
-          console.warn("Could not save to localStorage cache:", e);
-        }
+const useMapStore = create((storeSet) => {
+  get(CACHE_KEY)
+    .then((cached) => {
+      if (Array.isArray(cached) && cached.length > 0) {
+        storeSet({ pandals: cached });
       }
-    } catch (error) {
-      console.error("Error fetching pandals into store:", error);
-    }
-  },
+    })
+    .catch((err) => console.warn("IndexedDB read error:", err));
 
-  userLocation: null,
-  setUserLocation: (location) => set({ userLocation: location }),
+  return {
+    pandals: [],
+    setPandals: (pandals) => storeSet({ pandals }),
 
-  gpsStatus: "idle",
-  setGpsStatus: (status) => set({ gpsStatus: status }),
+    fetchPandals: async () => {
+      try {
+        const response = await fetch(`${API_URL}/pandals`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
 
-  gpsError: null,
-  setGpsError: (error) => set({ gpsError: error }),
+        if (Array.isArray(data) && data.length > 0) {
+          storeSet({ pandals: data });
 
-  isRouteMode: false,
-  setIsRouteMode: (status) => set({ isRouteMode: status }),
+          try {
+            const lightweightData = minimizeForCache(data);
+            await set(CACHE_KEY, lightweightData);
+          } catch (e) {
+            console.warn("Could not save to IndexedDB cache:", e);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching pandals into store:", error);
+      }
+    },
 
-  originPandal: null,
-  setOriginPandal: (pandal) => set({ originPandal: pandal }),
+    userLocation: null,
+    setUserLocation: (location) => storeSet({ userLocation: location }),
 
-  destinationPandal: null,
-  setDestinationPandal: (pandal) => set({ destinationPandal: pandal }),
+    gpsStatus: "idle",
+    setGpsStatus: (status) => storeSet({ gpsStatus: status }),
 
-  swapOriginAndDestination: () =>
-    set((state) => ({
-      originPandal: state.destinationPandal,
-      destinationPandal: state.originPandal,
-    })),
+    gpsError: null,
+    setGpsError: (error) => storeSet({ gpsError: error }),
 
-  searchQuery: "",
-  setSearchQuery: (query) => set({ searchQuery: query }),
+    isRouteMode: false,
+    setIsRouteMode: (status) => storeSet({ isRouteMode: status }),
 
-  searchResults: [],
-  setSearchResults: (results) => set({ searchResults: results }),
+    originPandal: null,
+    setOriginPandal: (pandal) => storeSet({ originPandal: pandal }),
 
-  isSearching: false,
-  setIsSearching: (status) => set({ isSearching: status }),
+    destinationPandal: null,
+    setDestinationPandal: (pandal) => storeSet({ destinationPandal: pandal }),
 
-  selectedPandal: null,
-  setSelectedPandal: (pandal) => set({ selectedPandal: pandal }),
+    swapOriginAndDestination: () =>
+      storeSet((state) => ({
+        originPandal: state.destinationPandal,
+        destinationPandal: state.originPandal,
+      })),
 
-  activeRoute: null,
-  setActiveRoute: (route) => set({ activeRoute: route }),
+    searchQuery: "",
+    setSearchQuery: (query) => storeSet({ searchQuery: query }),
 
-  routeStats: null,
-  setRouteStats: (stats) => set({ routeStats: stats }),
+    searchResults: [],
+    setSearchResults: (results) => storeSet({ searchResults: results }),
 
-  isNavigating: false,
-  setIsNavigating: (status) => set({ isNavigating: status }),
+    isSearching: false,
+    setIsSearching: (status) => storeSet({ isSearching: status }),
 
-  nearbyPandals: [],
-  setNearbyPandals: (pandals) => set({ nearbyPandals: pandals }),
+    selectedPandal: null,
+    setSelectedPandal: (pandal) => storeSet({ selectedPandal: pandal }),
 
-  activeProximityPandal: null,
-  setActiveProximityPandal: (pandal) => set({ activeProximityPandal: pandal }),
+    activeRoute: null,
+    setActiveRoute: (route) => storeSet({ activeRoute: route }),
 
-  routeGeometry: null,
-  setRouteGeometry: (geometry) => set({ routeGeometry: geometry }),
+    routeStats: null,
+    setRouteStats: (stats) => storeSet({ routeStats: stats }),
 
-  clearNavigation: () =>
-    set({
-      selectedPandal: null,
-      originPandal: null,
-      destinationPandal: null,
-      isRouteMode: false,
-      activeRoute: null,
-      routeStats: null,
-      searchQuery: "",
-      searchResults: [],
-      isNavigating: false,
-      activeProximityPandal: null,
-    }),
-}));
+    isNavigating: false,
+    setIsNavigating: (status) => storeSet({ isNavigating: status }),
+
+    nearbyPandals: [],
+    setNearbyPandals: (pandals) => storeSet({ nearbyPandals: pandals }),
+
+    activeProximityPandal: null,
+    setActiveProximityPandal: (pandal) =>
+      storeSet({ activeProximityPandal: pandal }),
+
+    routeGeometry: null,
+    setRouteGeometry: (geometry) => storeSet({ routeGeometry: geometry }),
+
+    clearNavigation: () =>
+      storeSet({
+        selectedPandal: null,
+        originPandal: null,
+        destinationPandal: null,
+        isRouteMode: false,
+        activeRoute: null,
+        routeStats: null,
+        searchQuery: "",
+        searchResults: [],
+        isNavigating: false,
+        activeProximityPandal: null,
+      }),
+  };
+});
 
 export default useMapStore;
