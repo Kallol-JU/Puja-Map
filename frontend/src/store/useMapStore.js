@@ -1,5 +1,10 @@
 import { create } from "zustand";
 
+// Dynamically retrieve backend API URL from Vite environment variables
+const API_URL = (
+  import.meta.env.VITE_API_URL || "https://puja-map.onrender.com/api"
+).replace(/\/$/, "");
+
 const useMapStore = create((set) => ({
   // 0. Global Pandal Data
   pandals: [],
@@ -7,7 +12,7 @@ const useMapStore = create((set) => ({
 
   fetchPandals: async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/pandals");
+      const response = await fetch(`${API_URL}/pandals`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       set({ pandals: Array.isArray(data) ? data : [] });
@@ -65,7 +70,7 @@ const useMapStore = create((set) => ({
   isNavigating: false,
   setIsNavigating: (status) => set({ isNavigating: status }),
 
-  // 5. Proximity State (Restored for useProximity hook)
+  // 5. Proximity State
   nearbyPandals: [],
   setNearbyPandals: (pandals) => set({ nearbyPandals: pandals }),
 
