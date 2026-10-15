@@ -3,10 +3,10 @@ import useMapStore from "../store/useMapStore";
 
 const DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox";
 const ADVANCE_RADIUS_M = 12; // 🚶 Advance maneuver tighter for pedestrians
-const OFF_ROUTE_THRESHOLD_M = 25; // 🚶 Re-route faster when taking wrong lanes
-const OFF_ROUTE_CONFIRMATIONS = 2;
-const REROUTE_COOLDOWN_MS = 8000;
-const MAX_ACCEPTABLE_ACCURACY_M = 50;
+const OFF_ROUTE_THRESHOLD_M = 25; // off-route if farther than this from the route line
+const OFF_ROUTE_CONFIRMATIONS = 2; // consecutive GPS fixes required
+const REROUTE_COOLDOWN_MS = 6000; // min gap between Directions requests (quota guard)
+const MAX_ACCEPTABLE_ACCURACY_M = 50; // ignore fixes worse than this for off-route checks
 
 const R = 6371008.8;
 const toRad = (d) => (d * Math.PI) / 180;
@@ -20,6 +20,7 @@ function distanceMeters([lng1, lat1], [lng2, lat2]) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+// Closest point to p on segment a-b (local equirectangular projection, fine at city scale)
 function projectPointToSegment(p, a, b) {
   const cosLat = Math.cos(toRad(p[1]));
   const ax = toRad(a[0] - p[0]) * cosLat * R;
@@ -49,6 +50,7 @@ function distanceToSegmentMeters(p, a, b) {
   return distanceMeters(p, proj);
 }
 
+// Shortest distance (m) from a point to the whole polyline
 function distanceToRouteMeters(point, coords) {
   if (!coords?.length) return Infinity;
   if (coords.length === 1) return distanceMeters(point, coords[0]);
@@ -95,8 +97,13 @@ export function useNavigation({
 
   const [steps, setSteps] = useState([]);
   const [stepIndex, setStepIndex] = useState(0);
+  // Latest route geometry fetched by THIS hook. It is the source of truth for
+  // off-route checks, so we never compare against a stale route even if the
+  // store's setRouteGeometry action is missing or slow.
+  const [routeLine, setRouteLine] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isRerouting, setIsRerouting] = useState(false);
+  const [isOffRoute, setIsOffRoute] = useState(false);
   const [error, setError] = useState(null);
 
   const prevLocationRef = useRef(null);
@@ -105,10 +112,15 @@ export function useNavigation({
   const fetchingRef = useRef(false);
   const lastFetchAtRef = useRef(0);
   const offRouteCountRef = useRef(0);
+  const lastFixKeyRef = useRef(null); // so each GPS fix is counted exactly once
 
+  // Newest route wins: hook-fetched > store geometry > initial preview route
   const routeCoords = useMemo(
-    () => toLineCoordinates(routeGeometry) ?? toLineCoordinates(activeRoute),
-    [routeGeometry, activeRoute],
+    () =>
+      toLineCoordinates(routeLine) ??
+      toLineCoordinates(routeGeometry) ??
+      toLineCoordinates(activeRoute),
+    [routeLine, routeGeometry, activeRoute],
   );
 
   // 🚶 Pedestrian Footstep Bearing Calculation
@@ -157,7 +169,7 @@ export function useNavigation({
       ? userLocation.heading
       : motionHeadingRef.current || roadBearing;
 
-    if (minDist <= 25) {
+    if (minDist <= OFF_ROUTE_THRESHOLD_M) {
       return {
         coordinates: bestPoint,
         bearing: effectiveBearing,
@@ -165,6 +177,7 @@ export function useNavigation({
       };
     }
 
+    // Off the route: show the raw GPS position, never a snapped one
     return { coordinates: pos, bearing: effectiveBearing, isSnapped: false };
   }, [isNavigating, userLocation, routeCoords]);
 
@@ -206,7 +219,18 @@ export function useNavigation({
 
         setSteps((best.legs?.[0]?.steps ?? []).map(normalizeStep));
         setStepIndex(0);
-        useMapStore.getState().setRouteGeometry?.(best.geometry);
+        setRouteLine(best.geometry);
+        setIsOffRoute(false);
+
+        const setGeometry = useMapStore.getState().setRouteGeometry;
+        if (typeof setGeometry === "function") {
+          setGeometry(best.geometry);
+        } else if (import.meta.env.DEV) {
+          console.warn(
+            "[useNavigation] store.setRouteGeometry is missing: pass the " +
+              "hook's returned `routeGeometry` to <CoreMap /> instead.",
+          );
+        }
 
         return best;
       } catch (err) {
@@ -223,19 +247,31 @@ export function useNavigation({
     [accessToken, profile],
   );
 
+  // Convenience wrapper matching getDirections(liveLng, liveLat, destLng, destLat)
+  const getDirections = useCallback(
+    (liveLng, liveLat, destLng, destLat, opts = { reroute: true }) =>
+      fetchRoute([liveLng, liveLat], [destLng, destLat], opts),
+    [fetchRoute],
+  );
+
+  // Reset everything when navigation ends
   useEffect(() => {
     if (isNavigating) return;
     abortRef.current?.abort();
     fetchingRef.current = false;
     offRouteCountRef.current = 0;
+    lastFixKeyRef.current = null;
     setSteps([]);
     setStepIndex(0);
+    setRouteLine(null);
     setLoading(false);
     setIsRerouting(false);
+    setIsOffRoute(false);
     setError(null);
     useMapStore.getState().setRouteGeometry?.(null);
   }, [isNavigating]);
 
+  // Initial route fetch when navigation starts
   useEffect(() => {
     if (!isNavigating || steps.length || fetchingRef.current) return;
     if (!userLocation || !Array.isArray(destCoords)) return;
@@ -244,6 +280,7 @@ export function useNavigation({
     fetchRoute([userLocation.lng, userLocation.lat], destCoords);
   }, [isNavigating, steps.length, userLocation, destCoords, fetchRoute]);
 
+  // Advance to the next maneuver
   useEffect(() => {
     if (!isNavigating || !userLocation || !steps.length) return;
     if (stepIndex >= steps.length - 1) return;
@@ -256,6 +293,7 @@ export function useNavigation({
     if (d <= ADVANCE_RADIUS_M) setStepIndex(stepIndex + 1);
   }, [isNavigating, userLocation, snappedPosition, steps, stepIndex]);
 
+  // 🧭 Off-route detection + debounced auto-reroute
   useEffect(() => {
     if (!isNavigating || !userLocation || !routeCoords) return;
     if (!steps.length || fetchingRef.current) return;
@@ -265,23 +303,30 @@ export function useNavigation({
     )
       return;
 
+    // Count each distinct GPS fix once. Without this, re-runs caused by other
+    // dependencies (or React StrictMode in dev) would inflate the counter.
+    const fixKey = `${userLocation.timestamp ?? ""}|${userLocation.lng}|${userLocation.lat}`;
+    if (lastFixKeyRef.current === fixKey) return;
+    lastFixKeyRef.current = fixKey;
+
     const pos = [userLocation.lng, userLocation.lat];
     const deviation = distanceToRouteMeters(pos, routeCoords);
 
     if (deviation <= OFF_ROUTE_THRESHOLD_M) {
       offRouteCountRef.current = 0;
+      setIsOffRoute(false);
       return;
     }
 
     offRouteCountRef.current += 1;
+    if (offRouteCountRef.current < OFF_ROUTE_CONFIRMATIONS) return;
+
+    setIsOffRoute(true); // confirmed off-route (UI can fade the stale line)
+
     const cooledDown =
       Date.now() - lastFetchAtRef.current >= REROUTE_COOLDOWN_MS;
-    if (
-      offRouteCountRef.current >= OFF_ROUTE_CONFIRMATIONS &&
-      cooledDown &&
-      Array.isArray(destCoords)
-    ) {
-      fetchRoute(pos, destCoords, { reroute: true });
+    if (cooledDown && Array.isArray(destCoords)) {
+      getDirections(pos[0], pos[1], destCoords[0], destCoords[1]);
     }
   }, [
     isNavigating,
@@ -289,7 +334,7 @@ export function useNavigation({
     routeCoords,
     steps.length,
     destCoords,
-    fetchRoute,
+    getDirections,
   ]);
 
   const step = steps[stepIndex] ?? null;
@@ -310,9 +355,12 @@ export function useNavigation({
     distanceToManeuver,
     destinationPandal,
     snappedPosition,
+    routeGeometry: routeLine, // latest route fetched by this hook
     loading,
     isRerouting,
+    isOffRoute,
     error,
     fetchRoute,
+    getDirections,
   };
 }

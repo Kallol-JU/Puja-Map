@@ -57,7 +57,14 @@ const routeLineLayer = {
   paint: {
     "line-color": "#2563eb",
     "line-width": 6,
+    "line-opacity": 1,
   },
+};
+
+// Same layer, faded: shown while the user is off-route and a new route is pending
+const staleRouteLineLayer = {
+  ...routeLineLayer,
+  paint: { ...routeLineLayer.paint, "line-opacity": 0.35 },
 };
 
 function toLineCoordinates(route) {
@@ -84,6 +91,7 @@ export default function CoreMap({
   isNavigating = false,
   activeRoute = null,
   routeGeometry = null,
+  isRouteStale = false, // pass `isOffRoute || isRerouting` from useNavigation
   selectedPandal = null,
   destinationPandal = null,
   userLocation = null,
@@ -110,29 +118,14 @@ export default function CoreMap({
   const activeBearing =
     snappedPosition?.bearing ?? userLocation?.heading ?? lastHeadingRef.current;
 
-  // 🚀 Connects user's current GPS position seamlessly to the start of the route line
-  const displayedRoute = useMemo(() => {
-    const rawFeat = toFeature(
-      isNavigating && routeGeometry ? routeGeometry : activeRoute,
-    );
-    if (!rawFeat) return null;
-
-    if (
-      activePos &&
-      rawFeat.geometry &&
-      Array.isArray(rawFeat.geometry.coordinates) &&
-      rawFeat.geometry.coordinates.length > 0
-    ) {
-      return {
-        ...rawFeat,
-        geometry: {
-          ...rawFeat.geometry,
-          coordinates: [activePos, ...rawFeat.geometry.coordinates],
-        },
-      };
-    }
-    return rawFeat;
-  }, [isNavigating, routeGeometry, activeRoute, activePos]);
+  // Render the route exactly as Mapbox returned it. We no longer prepend the
+  // live GPS position: that drew a straight diagonal line across buildings
+  // whenever the user left the route. As a bonus, this GeoJSON now only changes
+  // when the route changes, not on every GPS tick.
+  const displayedRoute = useMemo(
+    () => toFeature(isNavigating && routeGeometry ? routeGeometry : activeRoute),
+    [isNavigating, routeGeometry, activeRoute],
+  );
 
   const geoJsonData = useMemo(
     () => ({
@@ -290,10 +283,10 @@ export default function CoreMap({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* 1. CONNECTED ROUTE LINE */}
+      {/* 1. ROUTE LINE (clean Mapbox geometry; faded while off-route) */}
       {displayedRoute && (
         <Source id="active-route" type="geojson" data={displayedRoute}>
-          <Layer {...routeLineLayer} />
+          <Layer {...(isRouteStale ? staleRouteLineLayer : routeLineLayer)} />
         </Source>
       )}
 

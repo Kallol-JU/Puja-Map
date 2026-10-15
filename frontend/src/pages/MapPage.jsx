@@ -19,18 +19,27 @@ export default function MapPage() {
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
+  // Store state
   const pandals = useMapStore((state) => state.pandals);
   const fetchPandals = useMapStore((state) => state.fetchPandals);
   const setSelectedPandal = useMapStore((state) => state.setSelectedPandal);
   const selectedPandal = useMapStore((state) => state.selectedPandal);
   const destinationPandal = useMapStore((state) => state.destinationPandal);
   const activeRoute = useMapStore((state) => state.activeRoute);
-  const routeGeometry = useMapStore((state) => state.routeGeometry);
+  const storeRouteGeometry = useMapStore((state) => state.routeGeometry);
   const isNavigating = useMapStore((state) => state.isNavigating);
   const userLocation = useMapStore((state) => state.userLocation);
 
-  const { step, distanceToManeuver, isRerouting, snappedPosition } =
-    useNavigation();
+  // Navigation Hook (Live rerouting, off-route state, step maneuvers)
+  const nav = useNavigation();
+  const {
+    step,
+    distanceToManeuver,
+    isRerouting,
+    isOffRoute,
+    snappedPosition,
+    routeGeometry: hookRouteGeometry,
+  } = nav;
 
   const destination = destinationPandal ?? selectedPandal;
   const mapRef = useRef(null);
@@ -60,7 +69,10 @@ export default function MapPage() {
           pandals={pandals}
           isNavigating={isNavigating}
           activeRoute={activeRoute}
-          routeGeometry={routeGeometry}
+          // 🚀 Prioritizes hook-fetched route geometry over store fallback
+          routeGeometry={hookRouteGeometry ?? storeRouteGeometry}
+          // 🚀 Fades old route line to 35% opacity while calculating a new off-route path
+          isRouteStale={isOffRoute || isRerouting}
           selectedPandal={selectedPandal}
           destinationPandal={destination}
           userLocation={userLocation}
@@ -69,7 +81,7 @@ export default function MapPage() {
         />
       </div>
 
-      {/* TOP BAR */}
+      {/* TOP BAR / NAVIGATION HEADER */}
       {isNavigating ? (
         <div className="pointer-events-none absolute top-3 left-0 right-0 z-20 flex justify-center px-4 pt-[env(safe-area-inset-top)]">
           <div className="pointer-events-auto w-full max-w-md">
@@ -82,16 +94,17 @@ export default function MapPage() {
           </div>
         </div>
       ) : (
-        <div className="pointer-events-none absolute left-0 top-4 z-10 w-full px-4">
-          <div className="pointer-events-auto mx-auto max-w-md rounded-full bg-white shadow-lg">
+        <div className="pointer-events-none absolute left-0 top-3 z-10 w-full px-3 pt-[env(safe-area-inset-top)]">
+          <div className="pointer-events-auto">
             <SearchBar />
           </div>
         </div>
       )}
 
+      {/* PROXIMITY ALERT NOTIFICATION */}
       <ProximityAlert />
 
-      {/* FLOATING CONTROLS */}
+      {/* FLOATING MAP CONTROLS */}
       <div className="pointer-events-none absolute bottom-8 right-4 z-10 flex flex-col gap-4">
         <div className="pointer-events-auto">
           <MapControls
@@ -101,13 +114,14 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* PANDAL BOTTOM SHEET */}
+      {/* PANDAL BOTTOM SHEET & MODALS */}
       <PandalBottomSheet />
 
       <AddPandalModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
       />
+
       <InstallPrompt />
     </div>
   );
