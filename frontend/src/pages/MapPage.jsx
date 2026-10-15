@@ -94,8 +94,8 @@ export default function MapPage() {
           </div>
         </div>
       ) : (
-        <div className="pointer-events-none absolute left-0 top-3 z-10 w-full px-3 pt-[env(safe-area-inset-top)]">
-          <div className="pointer-events-auto">
+        <div className="pointer-events-none absolute top-3 left-0 right-0 z-10 flex justify-center px-3 pt-[env(safe-area-inset-top)]">
+          <div className="pointer-events-auto w-full flex justify-center">
             <SearchBar />
           </div>
         </div>
@@ -114,7 +114,6 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* PANDAL BOTTOM SHEET & MODALS */}
       <PandalBottomSheet />
 
       <AddPandalModal
