@@ -68,21 +68,26 @@ export default defineConfig({
       devOptions: { enabled: true },
     }),
   ],
-  // ⚡ PERFORMANCE OPTIMIZATIONS FOR ULTRA-FAST MOBILE LOADING
   build: {
     target: "esnext",
     minify: "esbuild",
     rollupOptions: {
       output: {
-        manualChunks: {
-          mapbox: ["mapbox-gl", "react-map-gl"],
-          icons: ["lucide-react"],
-          vendor: ["react", "react-dom", "zustand"],
+        manualChunks(id) {
+          if (id.includes("mapbox-gl") || id.includes("react-map-gl")) {
+            return "mapbox";
+          }
+          if (id.includes("lucide-react")) {
+            return "icons";
+          }
+          if (id.includes("node_modules")) {
+            return "vendor";
+          }
         },
       },
     },
   },
   server: {
-    host: true, // Allows testing on real physical mobile phones via local Wi-Fi IP
+    host: true,
   },
 });
