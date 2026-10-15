@@ -98,18 +98,41 @@ export default function CoreMap({
   userLocationRef.current = userLocation;
   navStateRef.current = { isNavigating, activeRoute };
 
-  // 🚀 Verify WebGL support before mounting Mapbox canvas
   useEffect(() => {
     if (!mapboxgl.supported({ failIfMajorPerformanceCaveat: false })) {
       setIsSupported(false);
     }
   }, []);
 
-  const displayedRoute = useMemo(
-    () =>
-      toFeature(isNavigating && routeGeometry ? routeGeometry : activeRoute),
-    [isNavigating, routeGeometry, activeRoute],
-  );
+  const activePos =
+    snappedPosition?.coordinates ||
+    (userLocation ? [userLocation.lng, userLocation.lat] : null);
+  const activeBearing =
+    snappedPosition?.bearing ?? userLocation?.heading ?? lastHeadingRef.current;
+
+  // 🚀 Connects user's current GPS position seamlessly to the start of the route line
+  const displayedRoute = useMemo(() => {
+    const rawFeat = toFeature(
+      isNavigating && routeGeometry ? routeGeometry : activeRoute,
+    );
+    if (!rawFeat) return null;
+
+    if (
+      activePos &&
+      rawFeat.geometry &&
+      Array.isArray(rawFeat.geometry.coordinates) &&
+      rawFeat.geometry.coordinates.length > 0
+    ) {
+      return {
+        ...rawFeat,
+        geometry: {
+          ...rawFeat.geometry,
+          coordinates: [activePos, ...rawFeat.geometry.coordinates],
+        },
+      };
+    }
+    return rawFeat;
+  }, [isNavigating, routeGeometry, activeRoute, activePos]);
 
   const geoJsonData = useMemo(
     () => ({
@@ -129,12 +152,6 @@ export default function CoreMap({
     [pandals],
   );
 
-  const activePos =
-    snappedPosition?.coordinates ||
-    (userLocation ? [userLocation.lng, userLocation.lat] : null);
-  const activeBearing =
-    snappedPosition?.bearing ?? userLocation?.heading ?? lastHeadingRef.current;
-
   useEffect(() => {
     if (!selectedPandal || !mapRef?.current) return;
     const { isNavigating: nav, activeRoute: route } = navStateRef.current;
@@ -151,7 +168,7 @@ export default function CoreMap({
     }
   }, [selectedPandal, mapRef]);
 
-  // 🚶 Pedestrian Camera Tracking
+  // 🚶 Walking Camera Tracking
   useEffect(() => {
     if (!isNavigating || !activePos || !mapRef?.current) return;
 
@@ -273,28 +290,42 @@ export default function CoreMap({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* 1. CONNECTED ROUTE LINE */}
       {displayedRoute && (
         <Source id="active-route" type="geojson" data={displayedRoute}>
           <Layer {...routeLineLayer} />
         </Source>
       )}
 
+      {/* 2. PANDAL DOTS */}
       <Source id="pandals" type="geojson" data={geoJsonData}>
         <Layer {...pandalDotLayer} />
       </Source>
 
+      {/* 3. GOOGLE MAPS NAVIGATION PUCK */}
       {activePos && (
         <Marker
           longitude={activePos[0]}
           latitude={activePos[1]}
           anchor="center"
         >
-          <div
-            className="relative flex h-8 w-8 items-center justify-center transition-transform duration-300"
-            style={{ transform: `rotate(${activeBearing}deg)` }}
-          >
-            <div className="absolute -top-3 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-blue-500/40" />
-            <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-blue-600 shadow-lg" />
+          <div className="relative flex items-center justify-center w-12 h-12">
+            {/* Accuracy Pulse Aura */}
+            <div className="absolute w-10 h-10 rounded-full bg-blue-500/20 border border-blue-400/40 animate-pulse" />
+
+            {/* Heading Beam & Marker Puck */}
+            <div
+              className="relative flex items-center justify-center w-8 h-8 transition-transform duration-300 ease-out"
+              style={{ transform: `rotate(${activeBearing}deg)` }}
+            >
+              {/* Google Maps Direction Cone */}
+              <div className="absolute -top-3.5 w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[18px] border-b-blue-500/50 filter drop-shadow-sm" />
+
+              {/* Core Puck */}
+              <div className="relative w-5 h-5 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center">
+                <div className="w-1.5 h-1.5 bg-white rounded-full" />
+              </div>
+            </div>
           </div>
         </Marker>
       )}
