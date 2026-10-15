@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import MapPage from "./pages/MapPage";
 import AdminPage from "./pages/AdminPage";
+import { Analytics } from "@vercel/analytics/react";
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
           <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </div>
+      <Analytics />
     </Router>
   );
 }
