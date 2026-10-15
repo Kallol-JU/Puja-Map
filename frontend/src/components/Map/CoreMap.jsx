@@ -1,5 +1,7 @@
-import { useMemo, useCallback, useEffect, useRef } from "react";
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import Map, { Source, Layer, Marker } from "react-map-gl/mapbox";
+import mapboxgl from "mapbox-gl";
+import { AlertTriangle } from "lucide-react";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const MAP_STYLE = "mapbox://styles/mapbox/light-v11";
@@ -11,9 +13,7 @@ const INITIAL_VIEW_STATE = {
 };
 
 const POINT_LAYER_ID = "pandal-dots";
-
 const ZERO_PADDING = { top: 0, bottom: 0, left: 0, right: 0 };
-// 🚶 Balanced top/bottom padding for walking view
 const NAV_PADDING = { top: 140, bottom: 120, left: 0, right: 0 };
 
 const pandalDotLayer = {
@@ -89,6 +89,7 @@ export default function CoreMap({
   userLocation = null,
   snappedPosition = null,
 }) {
+  const [isSupported, setIsSupported] = useState(true);
   const lastHeadingRef = useRef(0);
   const wasNavigatingRef = useRef(false);
   const userLocationRef = useRef(userLocation);
@@ -96,6 +97,13 @@ export default function CoreMap({
 
   userLocationRef.current = userLocation;
   navStateRef.current = { isNavigating, activeRoute };
+
+  // 🚀 Verify WebGL support before mounting Mapbox canvas
+  useEffect(() => {
+    if (!mapboxgl.supported({ failIfMajorPerformanceCaveat: false })) {
+      setIsSupported(false);
+    }
+  }, []);
 
   const displayedRoute = useMemo(
     () =>
@@ -143,7 +151,7 @@ export default function CoreMap({
     }
   }, [selectedPandal, mapRef]);
 
-  // 🚶 Walking 3D Camera Tracking
+  // 🚶 Pedestrian Camera Tracking
   useEffect(() => {
     if (!isNavigating || !activePos || !mapRef?.current) return;
 
@@ -151,8 +159,8 @@ export default function CoreMap({
 
     mapRef.current.easeTo({
       center: activePos,
-      zoom: 18.2, // 🔍 Street/lane level zoom for pedestrians
-      pitch: 40, // 📐 Comfortable walking tilt
+      zoom: 18.2,
+      pitch: 40,
       bearing: lastHeadingRef.current,
       padding: NAV_PADDING,
       duration: 1000,
@@ -238,6 +246,21 @@ export default function CoreMap({
     if (canvas) canvas.style.cursor = "";
   }, [mapRef]);
 
+  if (!isSupported) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full w-full bg-slate-900 text-white p-6 text-center">
+        <AlertTriangle className="w-12 h-12 text-amber-400 mb-3" />
+        <h3 className="text-lg font-bold mb-1">
+          WebGL Disabled or Unsupported
+        </h3>
+        <p className="text-xs text-slate-300 max-w-xs">
+          Please turn on hardware/graphics acceleration in your browser settings
+          to view map navigation.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <Map
       ref={mapRef}
@@ -250,19 +273,16 @@ export default function CoreMap({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* 1. ROUTE LINE */}
       {displayedRoute && (
         <Source id="active-route" type="geojson" data={displayedRoute}>
           <Layer {...routeLineLayer} />
         </Source>
       )}
 
-      {/* 2. PANDAL DOTS */}
       <Source id="pandals" type="geojson" data={geoJsonData}>
         <Layer {...pandalDotLayer} />
       </Source>
 
-      {/* 3. LIVE SNAPPED USER LOCATION WITH DIRECTIONAL CONE */}
       {activePos && (
         <Marker
           longitude={activePos[0]}
@@ -273,9 +293,7 @@ export default function CoreMap({
             className="relative flex h-8 w-8 items-center justify-center transition-transform duration-300"
             style={{ transform: `rotate(${activeBearing}deg)` }}
           >
-            {/* Direction Beam Cone */}
             <div className="absolute -top-3 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-blue-500/40" />
-            {/* Core Marker Puck */}
             <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-blue-600 shadow-lg" />
           </div>
         </Marker>
