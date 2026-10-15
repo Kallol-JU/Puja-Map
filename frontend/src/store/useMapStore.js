@@ -5,9 +5,22 @@ const API_URL = (
   import.meta.env.VITE_API_URL || "https://puja-map.onrender.com/api"
 ).replace(/\/$/, "");
 
+const CACHE_KEY = "pujomap_pandals_cache";
+
+// 🚀 Instant Cache Reader: Loads saved pandals synchronously on app boot
+const getCachedPandals = () => {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    return cached ? JSON.parse(cached) : [];
+  } catch (err) {
+    console.warn("Failed to read pandals from cache:", err);
+    return [];
+  }
+};
+
 const useMapStore = create((set) => ({
-  // 0. Global Pandal Data
-  pandals: [],
+  // 0. Global Pandal Data (Defaults to local cache for 0-second load)
+  pandals: getCachedPandals(),
   setPandals: (pandals) => set({ pandals }),
 
   fetchPandals: async () => {
@@ -15,7 +28,16 @@ const useMapStore = create((set) => ({
       const response = await fetch(`${API_URL}/pandals`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      set({ pandals: Array.isArray(data) ? data : [] });
+
+      if (Array.isArray(data) && data.length > 0) {
+        set({ pandals: data });
+        // Update local cache asynchronously for future 0-second boots
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        } catch (e) {
+          console.warn("Failed to write pandals to cache:", e);
+        }
+      }
     } catch (error) {
       console.error("Error fetching pandals into store:", error);
     }

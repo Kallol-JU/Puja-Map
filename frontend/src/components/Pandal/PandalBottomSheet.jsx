@@ -7,29 +7,64 @@ export default function PandalBottomSheet() {
   const selectedPandal = useMapStore((state) => state.selectedPandal);
   const clearNavigation = useMapStore((state) => state.clearNavigation);
   const userLocation = useMapStore((state) => state.userLocation);
+  const setUserLocation = useMapStore((state) => state.setUserLocation);
 
   const setActiveRoute = useMapStore((state) => state.setActiveRoute);
   const routeStats = useMapStore((state) => state.routeStats);
   const setRouteStats = useMapStore((state) => state.setRouteStats);
 
-  // Navigation state
   const isNavigating = useMapStore((state) => state.isNavigating);
   const setIsNavigating = useMapStore((state) => state.setIsNavigating);
 
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
 
-  // Hide sheet if no pandal selected or active turn-by-turn navigation is running
   if (!selectedPandal || isNavigating) return null;
 
-  const handleNavigation = async () => {
-    if (!userLocation) {
-      alert("Please enable GPS location permissions to get directions.");
-      return;
-    }
+  // Helper to dynamically trigger the browser GPS prompt on demand
+  const obtainCurrentLocation = () => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        return reject(
+          new Error("Geolocation is not supported by your browser."),
+        );
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const loc = {
+            lng: pos.coords.longitude,
+            lat: pos.coords.latitude,
+            heading: pos.coords.heading,
+            accuracy: pos.coords.accuracy,
+          };
+          setUserLocation(loc);
+          resolve(loc);
+        },
+        (err) => reject(err),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+      );
+    });
+  };
 
+  const handleNavigation = async () => {
     setIsLoadingRoute(true);
 
-    // Fallback coordinates check
+    let activeUserPos = userLocation;
+
+    // 🚀 Fallback: If userLocation isn't ready, prompt the browser on-demand
+    if (!activeUserPos) {
+      try {
+        activeUserPos = await obtainCurrentLocation();
+      } catch (err) {
+        setIsLoadingRoute(false);
+        alert(
+          "Location access is required for directions.\n\n" +
+            "1. Tap the lock/info icon in your browser URL bar and allow Location.\n" +
+            "2. If opening from WhatsApp/Instagram, tap ⋮ at the top right and select 'Open in Chrome / Safari'.",
+        );
+        return;
+      }
+    }
+
     const destCoords =
       selectedPandal.navigationPoint?.coordinates ||
       selectedPandal.location?.coordinates;
@@ -41,20 +76,18 @@ export default function PandalBottomSheet() {
     }
 
     const routeData = await getDirections(
-      userLocation.lng,
-      userLocation.lat,
+      activeUserPos.lng,
+      activeUserPos.lat,
       destCoords[0],
       destCoords[1],
     );
 
     if (routeData) {
-      // 1. Save geometry for the active map route line
       setActiveRoute({
         type: "Feature",
         geometry: routeData.geometry,
       });
 
-      // 2. Format distance & pedestrian walking time
       const distMeters = routeData.distance || 0;
       const formattedDistance =
         distMeters < 1000
@@ -103,7 +136,7 @@ export default function PandalBottomSheet() {
           </button>
         </div>
 
-        {/* Pedestrian Route Stats Pill */}
+        {/* Route Stats Pill */}
         {routeStats && (
           <div className="flex items-center justify-around bg-blue-50/80 border border-blue-100 p-2.5 rounded-2xl text-xs font-bold text-blue-900 shadow-sm">
             <div className="flex items-center gap-1.5">
@@ -117,7 +150,7 @@ export default function PandalBottomSheet() {
           </div>
         )}
 
-        {/* Action Button: Calculates Route -> Switches to Live Navigation */}
+        {/* Action Button */}
         {!routeStats ? (
           <button
             onClick={handleNavigation}
@@ -126,7 +159,7 @@ export default function PandalBottomSheet() {
           >
             {isLoadingRoute ? (
               <>
-                <Loader2 size={18} className="animate-spin" /> Calculating
+                <Loader2 size={18} className="animate-spin" /> Fetching GPS &
                 route...
               </>
             ) : (
