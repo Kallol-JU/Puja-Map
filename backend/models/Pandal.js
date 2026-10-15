@@ -13,7 +13,7 @@ const pandalSchema = new mongoose.Schema(
     },
 
     navigationPoint: {
-      type: { type: String, enum: ["Point"], default: "Point" },
+      type: { type: String, enum: ["Point"] },
       coordinates: { type: [Number] }, // [lng, lat]
     },
 
@@ -21,11 +21,24 @@ const pandalSchema = new mongoose.Schema(
     address: { type: String, trim: true },
     district: { type: String, index: true },
 
-    // Data Provenance & Trust System
+    // 🚀 NEW: Required for the Google scraper to prevent duplicate imports
+    googlePlaceId: { type: String, index: true, sparse: true },
+    osmId: { type: String, index: true, sparse: true },
+
     sources: [
       {
         type: String,
-        enum: ["SAHAJ", "PujoMap", "KolkataKhoj", "PujorShohor", "Manual"],
+
+        enum: [
+          "SAHAJ",
+          "PujoMap",
+          "KolkataKhoj",
+          "PujorShohor",
+          "Manual",
+          "GooglePlaces",
+          "OpenStreetMap",
+          "VIP-Seed",
+        ],
       },
     ],
 
@@ -41,7 +54,7 @@ const pandalSchema = new mongoose.Schema(
 );
 
 pandalSchema.index({ location: "2dsphere" });
-pandalSchema.index({ navigationPoint: "2dsphere" });
+pandalSchema.index({ navigationPoint: "2dsphere" }, { sparse: true });
 pandalSchema.index({ name: "text", aliases: "text" });
 
 export default mongoose.model("Pandal", pandalSchema);
