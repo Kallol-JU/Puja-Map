@@ -1,0 +1,243 @@
+[
+  {
+    "name": "19 Pally",
+    "area": "Kolkata",
+    "address": "Near Kalighat Metro",
+    "aliases": ["19 Pally Kalighat"],
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3495, 22.5178] }
+  },
+  {
+    "name": "24 Pally Club",
+    "area": "Chetla",
+    "address": "Near Chetla, Kalighat Metro",
+    "aliases": ["24 Pally Chetla"],
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.339, 22.519] }
+  },
+  {
+    "name": "27 Pally Park",
+    "area": "Near 27 Pally Park",
+    "address": "Near Kalighat Metro",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3412, 22.5185] }
+  },
+  {
+    "name": "66 Pally",
+    "area": "Kalighat",
+    "address": "Kalighat Metro Zone",
+    "aliases": ["66 Pally Kalighat"],
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3489, 22.5192] }
+  },
+  {
+    "name": "Adi Lake Palli",
+    "area": "South & South-East Kolkata",
+    "address": "Southern Avenue, Kalighat Metro",
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3538, 22.512] }
+  },
+  {
+    "name": "Akaal Bodhan Durga Mandir",
+    "area": "Chetla",
+    "address": "Chetla, near Kalighat Metro",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3385, 22.5175] }
+  },
+  {
+    "name": "Badamtala Ashar Sangha",
+    "area": "Kalighat",
+    "address": "Rash Behari Avenue, Kalighat Metro",
+    "aliases": ["Badamtala Ashar Sangha"],
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3485, 22.5195] }
+  },
+  {
+    "name": "Ballygunge Cultural Association",
+    "area": "Ballygunge",
+    "address": "Ballygunge, Kalighat Metro Zone",
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3615, 22.518] }
+  },
+  {
+    "name": "Bengal Boys Training Association",
+    "area": "Anami Sangha",
+    "address": "Kalighat Metro Zone",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3458, 22.5162] }
+  },
+  {
+    "name": "Bengal United Club",
+    "area": "Kalighat",
+    "address": "Kalighat Metro Zone",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3472, 22.521] }
+  },
+  {
+    "name": "Chetla Agrani Club",
+    "area": "Chetla",
+    "address": "Chetla, near Kalighat Metro",
+    "aliases": ["Chetla Agrani"],
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3402, 22.5186] }
+  },
+  {
+    "name": "Chetla Palli Durga Puja Mandap",
+    "area": "Chetla",
+    "address": "Chetla, near Kalighat Metro",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3398, 22.5181] }
+  },
+  {
+    "name": "Chetla Sarbasadharaner Durgotsab",
+    "area": "Chetla",
+    "address": "Chetla, near Kalighat Metro",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.338, 22.5195] }
+  },
+  {
+    "name": "Deshapriya Park",
+    "area": "Kalighat",
+    "address": "Rash Behari Avenue, Kalighat Metro",
+    "aliases": ["Deshapriya Park Puja"],
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3582, 22.5181] }
+  },
+  {
+    "name": "Dilip Smriti Sangha",
+    "area": "Anami Sangha",
+    "address": "Kalighat Metro Zone",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3451, 22.5158] }
+  },
+  {
+    "name": "Forward Club",
+    "area": "Kalighat",
+    "address": "Kalighat Metro Zone",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.348, 22.5202] }
+  },
+  {
+    "name": "Golden Arrow Club",
+    "area": "Kalighat",
+    "address": "Kalighat Metro Zone",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3475, 22.5218] }
+  },
+  {
+    "name": "Gopal Nagar Durga Puja",
+    "area": "Chetla",
+    "address": "Gopal Nagar, Chetla",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3355, 22.523] }
+  },
+  {
+    "name": "Hindusthan Park Sarbojanin",
+    "area": "Gariahat",
+    "address": "Hindusthan Park, near Kalighat Metro",
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3621, 22.5189] }
+  },
+  {
+    "name": "Kalighat Jubamaitry",
+    "area": "Kolkata",
+    "address": "Kalighat Metro Zone",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.349, 22.5225] }
+  },
+  {
+    "name": "Kalighat Milan Sangha",
+    "area": "Jatin Das Park",
+    "address": "Near Jatin Das Park Metro",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.347, 22.522] }
+  },
+  {
+    "name": "Moitri Sangha Durga Puja Pandel",
+    "area": "Manoharpukur",
+    "address": "Manoharpukur Road",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.354, 22.519] }
+  },
+  {
+    "name": "Nepal Bhattacharya Street Club Durga Puja",
+    "area": "Anami Sangha",
+    "address": "Nepal Bhattacharya Street",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3461, 22.517] }
+  },
+  {
+    "name": "Pratapaditya Road Tricone Park",
+    "area": "Pratapaditya Road",
+    "address": "Pratapaditya Road, Kalighat",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3478, 22.5152] }
+  },
+  {
+    "name": "Puja At Kalighat",
+    "area": "Jatin Das Park",
+    "address": "Near Jatin Das Park Metro",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3468, 22.5228] }
+  },
+  {
+    "name": "Samaj Sebi Sangha",
+    "area": "Ballygunge",
+    "address": "Lake View Road, Ballygunge",
+    "aliases": ["Samaj Sebi"],
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3569, 22.5173] }
+  },
+  {
+    "name": "Sanghasree",
+    "area": "Kalighat",
+    "address": "Kalighat Road",
+    "aliases": ["Sanghasree Kalighat"],
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3465, 22.5205] }
+  },
+  {
+    "name": "Sen Bari Durga Puja",
+    "area": "Anami Sangha",
+    "address": "Kalighat Metro Zone",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3455, 22.5165] }
+  },
+  {
+    "name": "Shibmandir Sarbojanin",
+    "area": "Southern Avenue / Kalighat",
+    "address": "Southern Avenue",
+    "aliases": ["Shibmandir"],
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3528, 22.5122] }
+  },
+  {
+    "name": "Shraddhanjali Apartment",
+    "area": "Dover Terrace",
+    "address": "Dover Terrace, Ballygunge",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3635, 22.5195] }
+  },
+  {
+    "name": "Shree Ramkrishna Mandap",
+    "area": "Chetla",
+    "address": "Chetla",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3375, 22.5188] }
+  },
+  {
+    "name": "Tarun Sangha Durga Puja",
+    "area": "Lake Range",
+    "address": "Lake Range",
+    "confidenceLevel": "MEDIUM",
+    "location": { "type": "Point", "coordinates": [88.3512, 22.5115] }
+  },
+  {
+    "name": "Tridhara Sammilani",
+    "area": "Manoharpukur / Kalighat",
+    "address": "Monoharpukur Road",
+    "aliases": ["Tridhara"],
+    "confidenceLevel": "HIGH",
+    "location": { "type": "Point", "coordinates": [88.3562, 22.5185] }
+  }
+]
