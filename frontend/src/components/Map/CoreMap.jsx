@@ -6,19 +6,13 @@ import { AlertTriangle } from "lucide-react";
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const MAP_STYLE = "mapbox://styles/mapbox/light-v11";
 
-const INITIAL_VIEW_STATE = {
-  longitude: 88.3639,
-  latitude: 22.5726,
-  zoom: 11,
-};
-
+const INITIAL_VIEW_STATE = { longitude: 88.3639, latitude: 22.5726, zoom: 11 };
 const POINT_LAYER_ID = "pandal-dots";
 const ZERO_PADDING = { top: 0, bottom: 0, left: 0, right: 0 };
 const NAV_PADDING = { top: 140, bottom: 120, left: 0, right: 0 };
 
-// 🚀 Fixed: Opacity constants placed BEFORE layer definition
 const ROUTE_OPACITY_FRESH = 1;
-const ROUTE_OPACITY_STALE = 0.35; // off-route / rerouting
+const ROUTE_OPACITY_STALE = 0.35;
 
 const pandalDotLayer = {
   id: POINT_LAYER_ID,
@@ -54,10 +48,7 @@ const pandalDotLayer = {
 const routeLineLayer = {
   id: "route-line",
   type: "line",
-  layout: {
-    "line-join": "round",
-    "line-cap": "round",
-  },
+  layout: { "line-join": "round", "line-cap": "round" },
   paint: {
     "line-color": "#2563eb",
     "line-width": 6,
@@ -66,7 +57,6 @@ const routeLineLayer = {
   },
 };
 
-// Shortest-path angle unwrap so the puck never spins 359deg -> 1deg the long way
 function unwrapAngle(prev, next) {
   let delta = ((((next - prev) % 360) + 540) % 360) - 180;
   return prev + delta;
@@ -96,13 +86,14 @@ export default function CoreMap({
   isNavigating = false,
   activeRoute = null,
   routeGeometry = null,
-  isRouteStale = false, // pass `isOffRoute || isRerouting`
+  isRouteStale = false,
   selectedPandal = null,
   destinationPandal = null,
   userLocation = null,
   snappedPosition = null,
 }) {
   const [isSupported, setIsSupported] = useState(true);
+  const [compassHeading, setCompassHeading] = useState(null);
   const lastHeadingRef = useRef(0);
   const wasNavigatingRef = useRef(false);
   const userLocationRef = useRef(userLocation);
@@ -117,7 +108,30 @@ export default function CoreMap({
     }
   }, []);
 
-  // Memoised on the primitive values so effects only fire on a real move
+  // 🚀 Native Browser Compass Integration for Instant Turning
+  useEffect(() => {
+    const handleOrientation = (e) => {
+      let heading = null;
+      if (e.webkitCompassHeading !== undefined) {
+        heading = e.webkitCompassHeading; // iOS Safari
+      } else if (e.alpha !== null && (e.absolute || e.absolute === undefined)) {
+        heading = 360 - e.alpha; // Android Chrome
+      }
+      if (heading !== null) setCompassHeading(heading);
+    };
+
+    window.addEventListener("deviceorientationabsolute", handleOrientation);
+    window.addEventListener("deviceorientation", handleOrientation);
+
+    return () => {
+      window.removeEventListener(
+        "deviceorientationabsolute",
+        handleOrientation,
+      );
+      window.removeEventListener("deviceorientation", handleOrientation);
+    };
+  }, []);
+
   const posLng = snappedPosition?.coordinates?.[0] ?? userLocation?.lng;
   const posLat = snappedPosition?.coordinates?.[1] ?? userLocation?.lat;
   const activePos = useMemo(
@@ -127,10 +141,14 @@ export default function CoreMap({
         : null,
     [posLng, posLat],
   );
-  const activeBearing =
-    snappedPosition?.bearing ?? userLocation?.heading ?? lastHeadingRef.current;
 
-  // Continuous (unwrapped) rotation for the puck's CSS transition
+  // Compass dictates bearing first, falling back to GPS movement if compass fails
+  const activeBearing =
+    compassHeading ??
+    snappedPosition?.bearing ??
+    userLocation?.heading ??
+    lastHeadingRef.current;
+
   const puckRotationRef = useRef(0);
   if (Number.isFinite(activeBearing)) {
     puckRotationRef.current = unwrapAngle(
@@ -139,7 +157,6 @@ export default function CoreMap({
     );
   }
 
-  // Sliced route geometry attached directly to the snapped coordinate
   const displayedRoute = useMemo(
     () =>
       toFeature(isNavigating && routeGeometry ? routeGeometry : activeRoute),
@@ -180,23 +197,21 @@ export default function CoreMap({
     }
   }, [selectedPandal, mapRef]);
 
-  // 🚶 Walking Camera Tracking
   useEffect(() => {
     if (!isNavigating || !activePos || !mapRef?.current) return;
-
     if (Number.isFinite(activeBearing)) lastHeadingRef.current = activeBearing;
 
     mapRef.current.easeTo({
       center: activePos,
-      zoom: 18.2,
-      pitch: 40,
+      zoom: 18.5,
+      pitch: 45,
       bearing: lastHeadingRef.current,
       padding: NAV_PADDING,
-      duration: 1000,
+      duration: compassHeading !== null ? 200 : 1000, // Faster map rotation if using compass
       easing: (t) => t,
       essential: true,
     });
-  }, [isNavigating, activePos, activeBearing, mapRef]);
+  }, [isNavigating, activePos, activeBearing, compassHeading, mapRef]);
 
   useEffect(() => {
     if (wasNavigatingRef.current && !isNavigating && mapRef?.current) {
@@ -248,9 +263,7 @@ export default function CoreMap({
           duration: 1500,
         },
       );
-    } catch (err) {
-      console.error("Error fitting map bounds to active route:", err);
-    }
+    } catch (err) {}
   }, [activeRoute, isNavigating, destCoords, mapRef]);
 
   const handleClick = useCallback(
@@ -265,27 +278,11 @@ export default function CoreMap({
     [pandals, onPandalSelect],
   );
 
-  const handleMouseEnter = useCallback(() => {
-    const canvas = mapRef?.current?.getCanvas();
-    if (canvas) canvas.style.cursor = "pointer";
-  }, [mapRef]);
-
-  const handleMouseLeave = useCallback(() => {
-    const canvas = mapRef?.current?.getCanvas();
-    if (canvas) canvas.style.cursor = "";
-  }, [mapRef]);
-
   if (!isSupported) {
     return (
       <div className="flex flex-col items-center justify-center h-full w-full bg-slate-900 text-white p-6 text-center">
         <AlertTriangle className="w-12 h-12 text-amber-400 mb-3" />
-        <h3 className="text-lg font-bold mb-1">
-          WebGL Disabled or Unsupported
-        </h3>
-        <p className="text-xs text-slate-300 max-w-xs">
-          Please turn on hardware/graphics acceleration in your browser settings
-          to view map navigation.
-        </p>
+        <h3 className="text-lg font-bold mb-1">WebGL Unsupported</h3>
       </div>
     );
   }
@@ -299,10 +296,7 @@ export default function CoreMap({
       style={{ width: "100%", height: "100%" }}
       interactiveLayerIds={[POINT_LAYER_ID]}
       onClick={handleClick}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
-      {/* 1. ROUTE LINE */}
       {displayedRoute && (
         <Source id="active-route" type="geojson" data={displayedRoute}>
           <Layer
@@ -317,12 +311,10 @@ export default function CoreMap({
         </Source>
       )}
 
-      {/* 2. PANDAL DOTS */}
       <Source id="pandals" type="geojson" data={geoJsonData}>
         <Layer {...pandalDotLayer} />
       </Source>
 
-      {/* 3. GOOGLE MAPS NAVIGATION PUCK */}
       {activePos && (
         <Marker
           longitude={activePos[0]}
@@ -331,13 +323,11 @@ export default function CoreMap({
         >
           <div className="relative flex items-center justify-center w-12 h-12">
             <div className="absolute w-10 h-10 rounded-full bg-blue-500/20 border border-blue-400/40 animate-pulse" />
-
             <div
               className="relative flex items-center justify-center w-8 h-8 transition-transform duration-300 ease-out"
               style={{ transform: `rotate(${puckRotationRef.current}deg)` }}
             >
               <div className="absolute -top-3.5 w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[18px] border-b-blue-500/50 filter drop-shadow-sm" />
-
               <div className="relative w-5 h-5 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center">
                 <div className="w-1.5 h-1.5 bg-white rounded-full" />
               </div>

@@ -3,15 +3,15 @@ import useMapStore from "../store/useMapStore";
 
 const DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox";
 
-const ADVANCE_RADIUS_M = 12; // reach a maneuver -> go to the next step
-const OFF_ROUTE_THRESHOLD_M = 25; // perpendicular distance from the polyline
-const OFF_ROUTE_CONFIRMATIONS = 2; // consecutive bad fixes before rerouting
-const REROUTE_COOLDOWN_MS = 6000; // min gap between Directions requests
-const MAX_ACCEPTABLE_ACCURACY_M = 50; // ignore worse fixes for off-route checks
-const MOVE_THRESHOLD_M = 0.8; // movement needed to compute a footstep bearing
-const MOTION_HEADING_HOLD_MS = 4000; // keep the footstep bearing this long when still
-const SEGMENT_WINDOW_BACK = 2; // snapping search window (segments behind hint)
-const SEGMENT_WINDOW_AHEAD = 40; // snapping search window (segments ahead of hint)
+const ADVANCE_RADIUS_M = 15; // advance when within 15m of the turn
+const OFF_ROUTE_THRESHOLD_M = 25;
+const OFF_ROUTE_CONFIRMATIONS = 2;
+const REROUTE_COOLDOWN_MS = 6000;
+const MAX_ACCEPTABLE_ACCURACY_M = 50;
+const MOVE_THRESHOLD_M = 0.8;
+const MOTION_HEADING_HOLD_MS = 4000;
+const SEGMENT_WINDOW_BACK = 2;
+const SEGMENT_WINDOW_AHEAD = 40;
 
 const R = 6371008.8;
 const toRad = (d) => (d * Math.PI) / 180;
@@ -25,7 +25,6 @@ function distanceMeters([lng1, lat1], [lng2, lat2]) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// Closest point to p on segment a-b (local equirectangular projection, p = origin)
 function projectPointToSegment(p, a, b) {
   const cosLat = Math.cos(toRad(p[1]));
   const ax = toRad(a[0] - p[0]) * cosLat * R;
@@ -44,11 +43,12 @@ function calculateBearing([lng1, lat1], [lng2, lat2]) {
   const y = Math.sin(toRad(lng2 - lng1)) * Math.cos(toRad(lat2));
   const x =
     Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
-    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lng2 - lng1));
+    Math.sin(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.cos(toRad(lng2 - lng1));
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-// Nearest point on coords[from..to] (segment i = coords[i] -> coords[i+1])
 function nearestOnRoute(pos, coords, from, to) {
   let best = { dist: Infinity, point: pos, index: from };
   for (let i = from; i < to; i++) {
@@ -109,7 +109,6 @@ export function useNavigation({
   const hintRouteRef = useRef(null);
   const motionRef = useRef({ ref: null, heading: null, at: 0 });
 
-  // The route currently being followed (newest source wins)
   const rawRouteCoords = useMemo(
     () =>
       toLineCoordinates(routeLine) ??
@@ -118,9 +117,6 @@ export function useNavigation({
     [routeLine, storeRouteGeometry, activeRoute],
   );
 
-  // ---- 3. Pedestrian bearing from position deltas --------------------------
-  // The reference point only moves once the user has travelled >= 0.8 m, so slow
-  // walkers (< 0.8 m per fix) still accumulate into a valid bearing.
   const motionHeading = useMemo(() => {
     if (!userLocation) return null;
     const curr = [userLocation.lng, userLocation.lat];
@@ -141,10 +137,6 @@ export function useNavigation({
       : null;
   }, [userLocation]);
 
-  // ---- 1. Snapping to the polyline -----------------------------------------
-  // Search a window around the last known segment first so loops / out-and-back
-  // routes can't teleport the user to a far-away segment. Fall back to a full
-  // scan only if the windowed result is out of tolerance.
   const snappedPosition = useMemo(() => {
     if (!isNavigating || !userLocation || !rawRouteCoords?.length) return null;
     if (rawRouteCoords.length < 2) return null;
@@ -155,7 +147,7 @@ export function useNavigation({
     }
 
     const pos = [userLocation.lng, userLocation.lat];
-    const lastSeg = rawRouteCoords.length - 1; // exclusive upper bound for i
+    const lastSeg = rawRouteCoords.length - 1;
     const from = Math.max(0, segmentHintRef.current - SEGMENT_WINDOW_BACK);
     const to = Math.min(lastSeg, segmentHintRef.current + SEGMENT_WINDOW_AHEAD);
 
@@ -172,10 +164,11 @@ export function useNavigation({
       best.point,
       rawRouteCoords[best.index + 1],
     );
-    // motion -> device course -> route segment
     const bearing =
       motionHeading ??
-      (Number.isFinite(userLocation.heading) ? userLocation.heading : roadBearing);
+      (Number.isFinite(userLocation.heading)
+        ? userLocation.heading
+        : roadBearing);
 
     return {
       coordinates: isSnapped ? best.point : pos,
@@ -186,7 +179,6 @@ export function useNavigation({
     };
   }, [isNavigating, userLocation, rawRouteCoords, motionHeading]);
 
-  // ---- 1. Sliced, connected polyline ---------------------------------------
   const connectedRouteGeometry = useMemo(() => {
     const fallback = routeLine || storeRouteGeometry || activeRoute;
     if (!isNavigating || !rawRouteCoords?.length) return fallback;
@@ -204,7 +196,6 @@ export function useNavigation({
         },
       };
     }
-    // Off-route: keep the old line intact (the map fades it) until the new one lands
     return fallback;
   }, [
     isNavigating,
@@ -215,7 +206,6 @@ export function useNavigation({
     activeRoute,
   ]);
 
-  // ---- 2. Directions fetch (initial + reroute) -----------------------------
   const fetchRoute = useCallback(
     async (
       origin,
@@ -252,8 +242,6 @@ export function useNavigation({
         const best = data.routes?.[0];
         if (!best) throw new Error("No route found");
 
-        // Swap everything in one batch: old line stays until this moment, and
-        // nothing here touches the camera.
         setSteps((best.legs?.[0]?.steps ?? []).map(normalizeStep));
         setStepIndex(0);
         setRouteLine(best.geometry);
@@ -282,7 +270,6 @@ export function useNavigation({
     [fetchRoute],
   );
 
-  // Reset when navigation ends
   useEffect(() => {
     if (isNavigating) return;
     abortRef.current?.abort();
@@ -302,7 +289,6 @@ export function useNavigation({
     useMapStore.getState().setRouteGeometry?.(null);
   }, [isNavigating]);
 
-  // Initial route fetch
   useEffect(() => {
     if (!isNavigating || steps.length || fetchingRef.current) return;
     if (!userLocation || !Array.isArray(destCoords)) return;
@@ -311,7 +297,7 @@ export function useNavigation({
     fetchRoute([userLocation.lng, userLocation.lat], destCoords);
   }, [isNavigating, steps.length, userLocation, destCoords, fetchRoute]);
 
-  // ---- 4. Maneuver progression ---------------------------------------------
+  // 🚀 FIXED: Accurately advance step index based on the NEXT turn junction
   useEffect(() => {
     if (!isNavigating || !userLocation || !steps.length) return;
     if (stepIndex >= steps.length - 1) return;
@@ -321,17 +307,16 @@ export function useNavigation({
       userLocation.lat,
     ];
     let next = stepIndex;
-    // Loop so a short step (or a jumpy fix) can't leave the UI one step behind
+
     while (
       next < steps.length - 1 &&
-      distanceMeters(pos, steps[next].location) <= ADVANCE_RADIUS_M
+      distanceMeters(pos, steps[next + 1].location) <= ADVANCE_RADIUS_M
     ) {
       next += 1;
     }
     if (next !== stepIndex) setStepIndex(next);
   }, [isNavigating, userLocation, snappedPosition, steps, stepIndex]);
 
-  // ---- 2. Off-route detection (debounced) + auto reroute -------------------
   useEffect(() => {
     if (!isNavigating || !userLocation || !snappedPosition) return;
     if (!steps.length || fetchingRef.current) return;
@@ -339,9 +324,8 @@ export function useNavigation({
       userLocation.accuracy != null &&
       userLocation.accuracy > MAX_ACCEPTABLE_ACCURACY_M
     )
-      return; // too noisy to judge either way
+      return;
 
-    // Process each distinct GPS fix once
     const fixKey = `${userLocation.timestamp ?? ""}|${userLocation.lng}|${userLocation.lat}`;
     if (lastFixKeyRef.current === fixKey) return;
     lastFixKeyRef.current = fixKey;
@@ -376,32 +360,33 @@ export function useNavigation({
     getDirections,
   ]);
 
-  const step = steps[stepIndex] ?? null;
+  // 🚀 FIXED: Return the UPCOMING maneuver so the UI displays Left/Right Turn Icons
+  const upcomingStep = steps[stepIndex + 1] ?? steps[stepIndex] ?? null;
 
   const distanceToManeuver = useMemo(() => {
-    if (!userLocation || !step) return null;
+    if (!userLocation || !upcomingStep) return null;
     const pos = snappedPosition?.coordinates ?? [
       userLocation.lng,
       userLocation.lat,
     ];
-    return distanceMeters(pos, step.location);
-  }, [userLocation, snappedPosition, step]);
+    return distanceMeters(pos, upcomingStep.location);
+  }, [userLocation, snappedPosition, upcomingStep]);
 
   const hasArrived =
     steps.length > 0 &&
-    stepIndex === steps.length - 1 &&
+    stepIndex >= steps.length - 2 &&
     distanceToManeuver != null &&
     distanceToManeuver <= ADVANCE_RADIUS_M;
 
   return {
-    step, // { instruction, type, modifier, distance, location, name, duration }
+    step: upcomingStep, // Feeds the turn icons perfectly to ActiveNavPanel
     steps,
     stepIndex,
     distanceToManeuver,
     hasArrived,
     destinationPandal,
-    snappedPosition, // { coordinates, bearing, isSnapped, segmentIndex, deviation }
-    routeGeometry: connectedRouteGeometry, // sliced + prepended with snapped coords
+    snappedPosition,
+    routeGeometry: connectedRouteGeometry,
     loading,
     isRerouting,
     isOffRoute,
