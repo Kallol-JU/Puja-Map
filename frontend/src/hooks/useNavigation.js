@@ -2,11 +2,16 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import useMapStore from "../store/useMapStore";
 
 const DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox";
-const ADVANCE_RADIUS_M = 12; // Advance maneuver radius for pedestrians
-const OFF_ROUTE_THRESHOLD_M = 25; // off-route threshold in meters
-const OFF_ROUTE_CONFIRMATIONS = 2; // consecutive GPS fixes required
-const REROUTE_COOLDOWN_MS = 6000; // minimum gap between Directions requests
-const MAX_ACCEPTABLE_ACCURACY_M = 50; // ignore fixes worse than this for off-route checks
+
+const ADVANCE_RADIUS_M = 12; // reach a maneuver -> go to the next step
+const OFF_ROUTE_THRESHOLD_M = 25; // perpendicular distance from the polyline
+const OFF_ROUTE_CONFIRMATIONS = 2; // consecutive bad fixes before rerouting
+const REROUTE_COOLDOWN_MS = 6000; // min gap between Directions requests
+const MAX_ACCEPTABLE_ACCURACY_M = 50; // ignore worse fixes for off-route checks
+const MOVE_THRESHOLD_M = 0.8; // movement needed to compute a footstep bearing
+const MOTION_HEADING_HOLD_MS = 4000; // keep the footstep bearing this long when still
+const SEGMENT_WINDOW_BACK = 2; // snapping search window (segments behind hint)
+const SEGMENT_WINDOW_AHEAD = 40; // snapping search window (segments ahead of hint)
 
 const R = 6371008.8;
 const toRad = (d) => (d * Math.PI) / 180;
@@ -20,7 +25,7 @@ function distanceMeters([lng1, lat1], [lng2, lat2]) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// Closest point to p on segment a-b (local equirectangular projection)
+// Closest point to p on segment a-b (local equirectangular projection, p = origin)
 function projectPointToSegment(p, a, b) {
   const cosLat = Math.cos(toRad(p[1]));
   const ax = toRad(a[0] - p[0]) * cosLat * R;
@@ -39,26 +44,19 @@ function calculateBearing([lng1, lat1], [lng2, lat2]) {
   const y = Math.sin(toRad(lng2 - lng1)) * Math.cos(toRad(lat2));
   const x =
     Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
-    Math.sin(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.cos(toRad(lng2 - lng1));
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lng2 - lng1));
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-function distanceToSegmentMeters(p, a, b) {
-  const proj = projectPointToSegment(p, a, b);
-  return distanceMeters(p, proj);
-}
-
-function distanceToRouteMeters(point, coords) {
-  if (!coords?.length) return Infinity;
-  if (coords.length === 1) return distanceMeters(point, coords[0]);
-  let min = Infinity;
-  for (let i = 0; i < coords.length - 1; i++) {
-    const d = distanceToSegmentMeters(point, coords[i], coords[i + 1]);
-    if (d < min) min = d;
+// Nearest point on coords[from..to] (segment i = coords[i] -> coords[i+1])
+function nearestOnRoute(pos, coords, from, to) {
+  let best = { dist: Infinity, point: pos, index: from };
+  for (let i = from; i < to; i++) {
+    const proj = projectPointToSegment(pos, coords[i], coords[i + 1]);
+    const d = distanceMeters(pos, proj);
+    if (d < best.dist) best = { dist: d, point: proj, index: i };
   }
-  return min;
+  return best;
 }
 
 function toLineCoordinates(route) {
@@ -102,14 +100,16 @@ export function useNavigation({
   const [isOffRoute, setIsOffRoute] = useState(false);
   const [error, setError] = useState(null);
 
-  const prevLocationRef = useRef(null);
-  const motionHeadingRef = useRef(0);
   const abortRef = useRef(null);
   const fetchingRef = useRef(false);
   const lastFetchAtRef = useRef(0);
   const offRouteCountRef = useRef(0);
   const lastFixKeyRef = useRef(null);
+  const segmentHintRef = useRef(0);
+  const hintRouteRef = useRef(null);
+  const motionRef = useRef({ ref: null, heading: null, at: 0 });
 
+  // The route currently being followed (newest source wins)
   const rawRouteCoords = useMemo(
     () =>
       toLineCoordinates(routeLine) ??
@@ -118,89 +118,94 @@ export function useNavigation({
     [routeLine, storeRouteGeometry, activeRoute],
   );
 
-  // Pedestrian Footstep Bearing Calculation
-  useEffect(() => {
-    if (!userLocation) return;
+  // ---- 3. Pedestrian bearing from position deltas --------------------------
+  // The reference point only moves once the user has travelled >= 0.8 m, so slow
+  // walkers (< 0.8 m per fix) still accumulate into a valid bearing.
+  const motionHeading = useMemo(() => {
+    if (!userLocation) return null;
+    const curr = [userLocation.lng, userLocation.lat];
+    const now = userLocation.timestamp ?? Date.now();
+    const m = motionRef.current;
 
-    if (prevLocationRef.current) {
-      const prev = [prevLocationRef.current.lng, prevLocationRef.current.lat];
-      const curr = [userLocation.lng, userLocation.lat];
-      const dist = distanceMeters(prev, curr);
-
-      if (dist >= 0.8) {
-        motionHeadingRef.current = calculateBearing(prev, curr);
-      }
+    if (!m.ref) {
+      m.ref = curr;
+      return null;
     }
-
-    prevLocationRef.current = userLocation;
+    if (distanceMeters(m.ref, curr) >= MOVE_THRESHOLD_M) {
+      m.heading = calculateBearing(m.ref, curr);
+      m.ref = curr;
+      m.at = now;
+    }
+    return m.heading != null && now - m.at <= MOTION_HEADING_HOLD_MS
+      ? m.heading
+      : null;
   }, [userLocation]);
 
-  // Snapping + Segment Indexing
+  // ---- 1. Snapping to the polyline -----------------------------------------
+  // Search a window around the last known segment first so loops / out-and-back
+  // routes can't teleport the user to a far-away segment. Fall back to a full
+  // scan only if the windowed result is out of tolerance.
   const snappedPosition = useMemo(() => {
     if (!isNavigating || !userLocation || !rawRouteCoords?.length) return null;
+    if (rawRouteCoords.length < 2) return null;
+
+    if (hintRouteRef.current !== rawRouteCoords) {
+      hintRouteRef.current = rawRouteCoords;
+      segmentHintRef.current = 0;
+    }
+
     const pos = [userLocation.lng, userLocation.lat];
+    const lastSeg = rawRouteCoords.length - 1; // exclusive upper bound for i
+    const from = Math.max(0, segmentHintRef.current - SEGMENT_WINDOW_BACK);
+    const to = Math.min(lastSeg, segmentHintRef.current + SEGMENT_WINDOW_AHEAD);
 
-    let minDist = Infinity;
-    let bestPoint = pos;
-    let bestSegmentIdx = 0;
-
-    for (let i = 0; i < rawRouteCoords.length - 1; i++) {
-      const proj = projectPointToSegment(
-        pos,
-        rawRouteCoords[i],
-        rawRouteCoords[i + 1],
-      );
-      const d = distanceMeters(pos, proj);
-      if (d < minDist) {
-        minDist = d;
-        bestPoint = proj;
-        bestSegmentIdx = i;
-      }
+    let best = nearestOnRoute(pos, rawRouteCoords, from, to);
+    if (best.dist > OFF_ROUTE_THRESHOLD_M) {
+      const global = nearestOnRoute(pos, rawRouteCoords, 0, lastSeg);
+      if (global.dist < best.dist) best = global;
     }
 
-    const nextCoord = rawRouteCoords[bestSegmentIdx + 1] || bestPoint;
-    const roadBearing = calculateBearing(bestPoint, nextCoord);
-    const effectiveBearing = Number.isFinite(userLocation.heading)
-      ? userLocation.heading
-      : motionHeadingRef.current || roadBearing;
+    const isSnapped = best.dist <= OFF_ROUTE_THRESHOLD_M;
+    if (isSnapped) segmentHintRef.current = best.index;
 
-    if (minDist <= OFF_ROUTE_THRESHOLD_M) {
-      return {
-        coordinates: bestPoint,
-        bearing: effectiveBearing,
-        isSnapped: true,
-        segmentIndex: bestSegmentIdx,
-      };
-    }
+    const roadBearing = calculateBearing(
+      best.point,
+      rawRouteCoords[best.index + 1],
+    );
+    // motion -> device course -> route segment
+    const bearing =
+      motionHeading ??
+      (Number.isFinite(userLocation.heading) ? userLocation.heading : roadBearing);
 
     return {
-      coordinates: pos,
-      bearing: effectiveBearing,
-      isSnapped: false,
-      segmentIndex: -1,
+      coordinates: isSnapped ? best.point : pos,
+      bearing,
+      isSnapped,
+      segmentIndex: isSnapped ? best.index : -1,
+      deviation: best.dist,
     };
-  }, [isNavigating, userLocation, rawRouteCoords]);
+  }, [isNavigating, userLocation, rawRouteCoords, motionHeading]);
 
-  // 🚀 Dynamic Route Polyline Trimming (Google Maps style)
+  // ---- 1. Sliced, connected polyline ---------------------------------------
   const connectedRouteGeometry = useMemo(() => {
-    if (!isNavigating || !rawRouteCoords?.length) {
-      return routeLine || storeRouteGeometry || activeRoute;
-    }
+    const fallback = routeLine || storeRouteGeometry || activeRoute;
+    if (!isNavigating || !rawRouteCoords?.length) return fallback;
 
-    if (snappedPosition?.isSnapped && snappedPosition.segmentIndex >= 0) {
-      const remainingCoords = rawRouteCoords.slice(
-        snappedPosition.segmentIndex + 1,
-      );
+    if (snappedPosition?.isSnapped) {
       return {
         type: "Feature",
+        properties: {},
         geometry: {
           type: "LineString",
-          coordinates: [snappedPosition.coordinates, ...remainingCoords],
+          coordinates: [
+            snappedPosition.coordinates,
+            ...rawRouteCoords.slice(snappedPosition.segmentIndex + 1),
+          ],
         },
       };
     }
-
-    return routeLine || storeRouteGeometry || activeRoute;
+    // Off-route: keep the old line intact (the map fades it) until the new one lands
+    return fallback;
   }, [
     isNavigating,
     rawRouteCoords,
@@ -210,6 +215,7 @@ export function useNavigation({
     activeRoute,
   ]);
 
+  // ---- 2. Directions fetch (initial + reroute) -----------------------------
   const fetchRoute = useCallback(
     async (
       origin,
@@ -246,16 +252,15 @@ export function useNavigation({
         const best = data.routes?.[0];
         if (!best) throw new Error("No route found");
 
+        // Swap everything in one batch: old line stays until this moment, and
+        // nothing here touches the camera.
         setSteps((best.legs?.[0]?.steps ?? []).map(normalizeStep));
         setStepIndex(0);
         setRouteLine(best.geometry);
         setIsOffRoute(false);
+        segmentHintRef.current = 0;
 
-        const setGeometry = useMapStore.getState().setRouteGeometry;
-        if (typeof setGeometry === "function") {
-          setGeometry(best.geometry);
-        }
-
+        useMapStore.getState().setRouteGeometry?.(best.geometry);
         return best;
       } catch (err) {
         if (err.name !== "AbortError") setError(err);
@@ -284,6 +289,9 @@ export function useNavigation({
     fetchingRef.current = false;
     offRouteCountRef.current = 0;
     lastFixKeyRef.current = null;
+    segmentHintRef.current = 0;
+    hintRouteRef.current = null;
+    motionRef.current = { ref: null, heading: null, at: 0 };
     setSteps([]);
     setStepIndex(0);
     setRouteLine(null);
@@ -294,7 +302,7 @@ export function useNavigation({
     useMapStore.getState().setRouteGeometry?.(null);
   }, [isNavigating]);
 
-  // Initial Route Fetch
+  // Initial route fetch
   useEffect(() => {
     if (!isNavigating || steps.length || fetchingRef.current) return;
     if (!userLocation || !Array.isArray(destCoords)) return;
@@ -303,37 +311,42 @@ export function useNavigation({
     fetchRoute([userLocation.lng, userLocation.lat], destCoords);
   }, [isNavigating, steps.length, userLocation, destCoords, fetchRoute]);
 
-  // Maneuver Progression
+  // ---- 4. Maneuver progression ---------------------------------------------
   useEffect(() => {
     if (!isNavigating || !userLocation || !steps.length) return;
     if (stepIndex >= steps.length - 1) return;
 
-    const pos = snappedPosition?.coordinates || [
+    const pos = snappedPosition?.coordinates ?? [
       userLocation.lng,
       userLocation.lat,
     ];
-    const d = distanceMeters(pos, steps[stepIndex].location);
-    if (d <= ADVANCE_RADIUS_M) setStepIndex(stepIndex + 1);
+    let next = stepIndex;
+    // Loop so a short step (or a jumpy fix) can't leave the UI one step behind
+    while (
+      next < steps.length - 1 &&
+      distanceMeters(pos, steps[next].location) <= ADVANCE_RADIUS_M
+    ) {
+      next += 1;
+    }
+    if (next !== stepIndex) setStepIndex(next);
   }, [isNavigating, userLocation, snappedPosition, steps, stepIndex]);
 
-  // Off-route Detection & Auto-Reroute
+  // ---- 2. Off-route detection (debounced) + auto reroute -------------------
   useEffect(() => {
-    if (!isNavigating || !userLocation || !rawRouteCoords) return;
+    if (!isNavigating || !userLocation || !snappedPosition) return;
     if (!steps.length || fetchingRef.current) return;
     if (
       userLocation.accuracy != null &&
       userLocation.accuracy > MAX_ACCEPTABLE_ACCURACY_M
     )
-      return;
+      return; // too noisy to judge either way
 
+    // Process each distinct GPS fix once
     const fixKey = `${userLocation.timestamp ?? ""}|${userLocation.lng}|${userLocation.lat}`;
     if (lastFixKeyRef.current === fixKey) return;
     lastFixKeyRef.current = fixKey;
 
-    const pos = [userLocation.lng, userLocation.lat];
-    const deviation = distanceToRouteMeters(pos, rawRouteCoords);
-
-    if (deviation <= OFF_ROUTE_THRESHOLD_M) {
+    if (snappedPosition.deviation <= OFF_ROUTE_THRESHOLD_M) {
       offRouteCountRef.current = 0;
       setIsOffRoute(false);
       return;
@@ -347,12 +360,17 @@ export function useNavigation({
     const cooledDown =
       Date.now() - lastFetchAtRef.current >= REROUTE_COOLDOWN_MS;
     if (cooledDown && Array.isArray(destCoords)) {
-      getDirections(pos[0], pos[1], destCoords[0], destCoords[1]);
+      getDirections(
+        userLocation.lng,
+        userLocation.lat,
+        destCoords[0],
+        destCoords[1],
+      );
     }
   }, [
     isNavigating,
     userLocation,
-    rawRouteCoords,
+    snappedPosition,
     steps.length,
     destCoords,
     getDirections,
@@ -362,21 +380,28 @@ export function useNavigation({
 
   const distanceToManeuver = useMemo(() => {
     if (!userLocation || !step) return null;
-    const pos = snappedPosition?.coordinates || [
+    const pos = snappedPosition?.coordinates ?? [
       userLocation.lng,
       userLocation.lat,
     ];
     return distanceMeters(pos, step.location);
   }, [userLocation, snappedPosition, step]);
 
+  const hasArrived =
+    steps.length > 0 &&
+    stepIndex === steps.length - 1 &&
+    distanceToManeuver != null &&
+    distanceToManeuver <= ADVANCE_RADIUS_M;
+
   return {
-    step,
+    step, // { instruction, type, modifier, distance, location, name, duration }
     steps,
     stepIndex,
     distanceToManeuver,
+    hasArrived,
     destinationPandal,
-    snappedPosition,
-    routeGeometry: connectedRouteGeometry, // 🚀 Dynamically trimmed & connected polyline
+    snappedPosition, // { coordinates, bearing, isSnapped, segmentIndex, deviation }
+    routeGeometry: connectedRouteGeometry, // sliced + prepended with snapped coords
     loading,
     isRerouting,
     isOffRoute,

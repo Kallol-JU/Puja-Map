@@ -16,6 +16,10 @@ const POINT_LAYER_ID = "pandal-dots";
 const ZERO_PADDING = { top: 0, bottom: 0, left: 0, right: 0 };
 const NAV_PADDING = { top: 140, bottom: 120, left: 0, right: 0 };
 
+// 🚀 Fixed: Opacity constants placed BEFORE layer definition
+const ROUTE_OPACITY_FRESH = 1;
+const ROUTE_OPACITY_STALE = 0.35; // off-route / rerouting
+
 const pandalDotLayer = {
   id: POINT_LAYER_ID,
   type: "circle",
@@ -57,15 +61,16 @@ const routeLineLayer = {
   paint: {
     "line-color": "#2563eb",
     "line-width": 6,
-    "line-opacity": 1,
+    "line-opacity": ROUTE_OPACITY_FRESH,
+    "line-opacity-transition": { duration: 300, delay: 0 },
   },
 };
 
-// Same layer, faded: shown while the user is off-route and a new route is pending
-const staleRouteLineLayer = {
-  ...routeLineLayer,
-  paint: { ...routeLineLayer.paint, "line-opacity": 0.35 },
-};
+// Shortest-path angle unwrap so the puck never spins 359deg -> 1deg the long way
+function unwrapAngle(prev, next) {
+  let delta = ((((next - prev) % 360) + 540) % 360) - 180;
+  return prev + delta;
+}
 
 function toLineCoordinates(route) {
   if (!route) return null;
@@ -91,7 +96,7 @@ export default function CoreMap({
   isNavigating = false,
   activeRoute = null,
   routeGeometry = null,
-  isRouteStale = false, // pass `isOffRoute || isRerouting` from useNavigation
+  isRouteStale = false, // pass `isOffRoute || isRerouting`
   selectedPandal = null,
   destinationPandal = null,
   userLocation = null,
@@ -112,18 +117,32 @@ export default function CoreMap({
     }
   }, []);
 
-  const activePos =
-    snappedPosition?.coordinates ||
-    (userLocation ? [userLocation.lng, userLocation.lat] : null);
+  // Memoised on the primitive values so effects only fire on a real move
+  const posLng = snappedPosition?.coordinates?.[0] ?? userLocation?.lng;
+  const posLat = snappedPosition?.coordinates?.[1] ?? userLocation?.lat;
+  const activePos = useMemo(
+    () =>
+      Number.isFinite(posLng) && Number.isFinite(posLat)
+        ? [posLng, posLat]
+        : null,
+    [posLng, posLat],
+  );
   const activeBearing =
     snappedPosition?.bearing ?? userLocation?.heading ?? lastHeadingRef.current;
 
-  // Render the route exactly as Mapbox returned it. We no longer prepend the
-  // live GPS position: that drew a straight diagonal line across buildings
-  // whenever the user left the route. As a bonus, this GeoJSON now only changes
-  // when the route changes, not on every GPS tick.
+  // Continuous (unwrapped) rotation for the puck's CSS transition
+  const puckRotationRef = useRef(0);
+  if (Number.isFinite(activeBearing)) {
+    puckRotationRef.current = unwrapAngle(
+      puckRotationRef.current,
+      activeBearing,
+    );
+  }
+
+  // Sliced route geometry attached directly to the snapped coordinate
   const displayedRoute = useMemo(
-    () => toFeature(isNavigating && routeGeometry ? routeGeometry : activeRoute),
+    () =>
+      toFeature(isNavigating && routeGeometry ? routeGeometry : activeRoute),
     [isNavigating, routeGeometry, activeRoute],
   );
 
@@ -283,10 +302,18 @@ export default function CoreMap({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* 1. ROUTE LINE (clean Mapbox geometry; faded while off-route) */}
+      {/* 1. ROUTE LINE */}
       {displayedRoute && (
         <Source id="active-route" type="geojson" data={displayedRoute}>
-          <Layer {...(isRouteStale ? staleRouteLineLayer : routeLineLayer)} />
+          <Layer
+            {...routeLineLayer}
+            paint={{
+              ...routeLineLayer.paint,
+              "line-opacity": isRouteStale
+                ? ROUTE_OPACITY_STALE
+                : ROUTE_OPACITY_FRESH,
+            }}
+          />
         </Source>
       )}
 
@@ -303,18 +330,14 @@ export default function CoreMap({
           anchor="center"
         >
           <div className="relative flex items-center justify-center w-12 h-12">
-            {/* Accuracy Pulse Aura */}
             <div className="absolute w-10 h-10 rounded-full bg-blue-500/20 border border-blue-400/40 animate-pulse" />
 
-            {/* Heading Beam & Marker Puck */}
             <div
               className="relative flex items-center justify-center w-8 h-8 transition-transform duration-300 ease-out"
-              style={{ transform: `rotate(${activeBearing}deg)` }}
+              style={{ transform: `rotate(${puckRotationRef.current}deg)` }}
             >
-              {/* Google Maps Direction Cone */}
               <div className="absolute -top-3.5 w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[18px] border-b-blue-500/50 filter drop-shadow-sm" />
 
-              {/* Core Puck */}
               <div className="relative w-5 h-5 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center">
                 <div className="w-1.5 h-1.5 bg-white rounded-full" />
               </div>
